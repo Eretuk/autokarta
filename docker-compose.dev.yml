@@ -1,5 +1,9 @@
-# Local development database only. Production compose comes later.
+# Local development database only. Production stack: docker-compose.yml.
 # Start: docker compose -f docker-compose.dev.yml up -d
+# Separate project name, so it never shares containers or volumes with the
+# production stack in docker-compose.yml.
+name: autokarta-dev
+
 services:
   db:
     image: postgres:17-alpine
