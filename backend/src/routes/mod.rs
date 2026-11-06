@@ -1,6 +1,10 @@
 mod auth;
+mod clients;
 mod health;
+mod settings;
 mod users;
+mod vehicles;
+mod work_orders;
 
 use std::path::Path;
 
@@ -25,6 +29,10 @@ pub fn router(state: AppState, static_dir: Option<&Path>) -> Router {
         .route("/health", get(health::health))
         .nest("/auth", auth::routes())
         .nest("/users", users::routes())
+        .nest("/settings", settings::routes())
+        .nest("/clients", clients::routes())
+        .nest("/vehicles", vehicles::routes())
+        .nest("/work-orders", work_orders::routes())
         .fallback(|| async { AppError::NotFound });
 
     let mut app = Router::new().nest("/api", api);
@@ -62,4 +70,39 @@ async fn static_cache_headers(req: Request, next: Next) -> Response {
             .or_insert(HeaderValue::from_static(v));
     }
     res
+}
+
+/// `%term%` for LIKE, with the user's own `%`, `_` and `\\` escaped.
+pub(crate) fn like_pattern(term: &str) -> String {
+    let mut out = String::with_capacity(term.len() + 2);
+    out.push('%');
+    for c in term.chars() {
+        if matches!(c, '%' | '_' | '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('%');
+    out
+}
+
+/// For PATCH fields where `null` means "clear" and a missing field means
+/// "leave unchanged": use with `#[serde(default)]` on an `Option<Option<T>>`.
+pub(crate) fn deserialize_some<'de, T, D>(d: D) -> Result<Option<T>, D::Error>
+where
+    T: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    T::deserialize(d).map(Some)
+}
+
+#[cfg(test)]
+mod api_tests;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn like_pattern_escapes() {
+        assert_eq!(super::like_pattern("50%_a\\b"), "%50\\%\\_a\\\\b%");
+    }
 }

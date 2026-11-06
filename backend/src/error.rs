@@ -65,3 +65,17 @@ impl IntoResponse for AppError {
         response
     }
 }
+
+/// Turns a unique-constraint violation into a 409 with a specific code.
+/// `map` pairs a constraint (or unique index) name with the error code.
+pub fn conflict_on(e: sqlx::Error, map: &[(&str, &'static str)]) -> AppError {
+    if let sqlx::Error::Database(d) = &e {
+        if d.is_unique_violation() {
+            let name = d.constraint().unwrap_or_default();
+            if let Some((_, code)) = map.iter().find(|(c, _)| *c == name) {
+                return AppError::Conflict(code);
+            }
+        }
+    }
+    e.into()
+}
