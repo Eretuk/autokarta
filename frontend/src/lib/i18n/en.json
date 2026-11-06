@@ -4,14 +4,17 @@
 		"hide": "Hide",
 		"close": "Close",
 		"loading": "Loading…",
-		"saveChanges": "Save changes"
+		"saveChanges": "Save changes",
+		"cancel": "Cancel",
+		"delete": "Delete"
 	},
 	"nav": {
 		"main": "Main menu",
 		"home": "Home",
-		"scanner": "Scanner",
 		"staff": "Staff",
-		"account": "Account"
+		"account": "Account",
+		"vehicles": "Vehicles",
+		"orders": "Orders"
 	},
 	"login": {
 		"title": "Sign in",
@@ -20,13 +23,6 @@
 		"submit": "Sign in",
 		"signingIn": "Signing in…",
 		"forgot": "Forgot your password? Ask the owner to set a new one."
-	},
-	"home": {
-		"greeting": "Hello, {name}",
-		"soonTitle": "Vehicles and work orders are next",
-		"soonBody": "This is an early version. For now you can manage staff, change your settings and test the camera scanner.",
-		"tryScanner": "Test the scanner",
-		"manageStaff": "Manage staff"
 	},
 	"roles": {
 		"owner": "Owner",
@@ -107,7 +103,9 @@
 			"noCamera": "No camera found on this device.",
 			"generic": "Could not start the camera. Close other apps that use it and try again.",
 			"engine": "The scanner could not start in this browser. Try the latest Chrome or Safari."
-		}
+		},
+		"scanCode": "Scan a code",
+		"open": "Open scanner test"
 	},
 	"notFound": {
 		"title": "Page not found",
@@ -137,6 +135,166 @@
 		"username_taken": "This username is already taken. Choose another one.",
 		"cannot_demote_self": "You cannot change your own role or deactivate yourself.",
 		"wrong_current_password": "Current password is wrong.",
-		"passwords_do_not_match": "The new passwords do not match."
+		"passwords_do_not_match": "The new passwords do not match.",
+		"vin_taken": "A vehicle with this VIN already exists.",
+		"frame_number_taken": "A vehicle with this frame number already exists.",
+		"vehicle_identifier_required": "Enter a plate, VIN or frame number.",
+		"invalid_vin": "VIN must be 11–17 letters and digits (no I, O or Q).",
+		"invalid_frame_number": "Frame number: 5–24 Latin letters, digits and dashes.",
+		"invalid_plate": "Plate: 2–12 letters and digits.",
+		"invalid_year": "Enter a year like 2008.",
+		"invalid_odometer": "Enter the mileage as a whole number.",
+		"odometer_lower_than_previous": "This reading is lower than the previous one.",
+		"work_order_closed": "This order is closed. Reopen it to make changes.",
+		"invalid_quantity": "Enter a quantity greater than zero, e.g. 1 or 1.5.",
+		"invalid_price": "Enter a price like 120 or 120.50.",
+		"invalid_status": "Unknown status.",
+		"invalid_currency": "Currency must be a three-letter code like PLN.",
+		"invalid_distance_unit": "Choose km or mi.",
+		"invalid_client_name": "Enter the client's name.",
+		"invalid_phone": "Check the phone number.",
+		"text_too_long": "The text is too long.",
+		"invalid_vehicle_role": "Choose a vehicle type from the list.",
+		"unknown_client": "This client no longer exists. Pick another one.",
+		"owner_change_before_start": "The date is before the current owner got the car.",
+		"reading_belongs_to_work_order": "This reading belongs to a work order. Change it there.",
+		"invalid_description": "Describe the work."
+	},
+	"units": {
+		"km": "km",
+		"mi": "mi"
+	},
+	"vehicles": {
+		"title": "Vehicles",
+		"searchLabel": "Find a vehicle",
+		"searchPlaceholder": "Plate, VIN, frame no. or owner",
+		"add": "Add vehicle",
+		"results": "Found",
+		"recent": "Recent vehicles",
+		"noResults": "Nothing found. Check the spelling or add the vehicle.",
+		"empty": "No vehicles yet. Add the first one.",
+		"unnamed": "Make and model not set",
+		"inWork": "In work",
+		"addTitle": "New vehicle",
+		"addSubmit": "Add vehicle",
+		"identification": "Identification",
+		"identificationHint": "Fill in at least one: plate, VIN or frame number.",
+		"plate": "Plate",
+		"vin": "VIN",
+		"frameNumber": "Frame number",
+		"frameNumberHint": "For Japanese cars without a VIN, e.g. GX100-1234567.",
+		"description": "Vehicle",
+		"make": "Make",
+		"model": "Model",
+		"year": "Year",
+		"engine": "Engine",
+		"role": "Type",
+		"roles": {
+			"customer": "Customer car",
+			"fleet": "Own fleet",
+			"for_sale": "For sale"
+		},
+		"odometerUnit": "Odometer shows",
+		"note": "Note",
+		"ownerAndMileage": "Owner and mileage",
+		"owner": "Owner",
+		"currentOdometer": "Odometer now, {unit}",
+		"openExisting": "Open the existing vehicle",
+		"odometer": "Odometer",
+		"noOdometer": "not recorded yet",
+		"edit": "Edit vehicle",
+		"noOwner": "Owner not set.",
+		"changeOwner": "Change owner",
+		"setOwner": "Set owner",
+		"pastOwners": {
+			"one": "{count} previous owner",
+			"other": "{count} previous owners"
+		},
+		"ownedFromTo": "{from} – {to}",
+		"noWorkOrders": "No work orders yet.",
+		"changeOwnerHint": "The current owner moves to the history. The car's service history stays with the car.",
+		"newOwner": "New owner",
+		"ownerSince": "Owner since",
+		"removeOwner": "Car has no known owner now"
+	},
+	"clients": {
+		"change": "Change",
+		"name": "Name",
+		"phone": "Phone",
+		"create": "Add client",
+		"searchPlaceholder": "Search by name or phone",
+		"addNew": "New client"
+	},
+	"odometer": {
+		"confirmLower": "This reading is lower than the previous one. Save it anyway? (For example, the instrument cluster was replaced.)",
+		"confirmDelete": "Delete this odometer reading?",
+		"add": "Record mileage",
+		"history": "Mileage history",
+		"last": "Last: {value}",
+		"reading": "Reading, {unit}",
+		"date": "Date",
+		"save": "Save reading"
+	},
+	"workOrders": {
+		"title": "Work orders",
+		"new": "New work order",
+		"number": "Order {number}",
+		"itemCount": {
+			"one": "{count} job",
+			"other": "{count} jobs"
+		},
+		"statuses": {
+			"open": "In work",
+			"done": "Done",
+			"cancelled": "Cancelled"
+		},
+		"odometerNow": "Odometer, {unit}",
+		"complaint": "Customer's complaint",
+		"complaintHint": "What the customer asked for, in their words.",
+		"create": "Open work order",
+		"filter": "Show",
+		"filters": {
+			"open": "In work",
+			"done": "Done",
+			"all": "All"
+		},
+		"noneOpen": "No cars in work right now.",
+		"none": "No work orders here.",
+		"startHint": "To open one, find the vehicle first.",
+		"notRecorded": "—",
+		"notes": "Internal notes",
+		"notesHint": "Only staff see these.",
+		"editDetails": "Edit details",
+		"items": "Work done",
+		"noItems": "No work recorded yet.",
+		"noPrice": "No price",
+		"total": "Total",
+		"unpriced": {
+			"one": "{count} job has no price yet",
+			"other": "{count} jobs have no price yet"
+		},
+		"addWork": "Add work",
+		"addWorkPlaceholder": "e.g. Oil and filter change",
+		"quantity": "Quantity / hours",
+		"unitPrice": "Price, {currency}",
+		"addItem": "Add work",
+		"markDone": "Mark as done",
+		"cancel": "Cancel order",
+		"closedHint": "This order is closed. Reopen it to make changes.",
+		"reopen": "Reopen order",
+		"editItem": "Edit work",
+		"description": "Description",
+		"deleteItem": "Delete this line",
+		"confirmDeleteItem": "Delete this line from the order?",
+		"confirmCancel": "Cancel this work order? It stays in the history as cancelled."
+	},
+	"settings": {
+		"title": "Business settings",
+		"hint": "Apply to everyone in this workshop.",
+		"saved": "Settings saved.",
+		"currency": "Currency",
+		"currencyHint": "Three-letter code, e.g. PLN, EUR.",
+		"distanceUnit": "Distance unit",
+		"distanceUnitHint": "Default for new vehicles. Each vehicle keeps the unit its odometer shows."
 	}
 }

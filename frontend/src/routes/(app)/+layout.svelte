@@ -15,8 +15,8 @@
 	}
 
 	const items: NavItem[] = [
-		{ href: '/', label: 'nav.home', icon: 'home' },
-		{ href: '/scanner', label: 'nav.scanner', icon: 'scan' },
+		{ href: '/', label: 'nav.vehicles', icon: 'car' },
+		{ href: '/work-orders', label: 'nav.orders', icon: 'orders' },
 		{ href: '/staff', label: 'nav.staff', icon: 'staff', ownerOnly: true },
 		{ href: '/account', label: 'nav.account', icon: 'account' }
 	];
@@ -25,7 +25,8 @@
 
 	function isActive(href: string) {
 		const path = page.url.pathname;
-		return href === '/' ? path === '/' : path === href || path.startsWith(href + '/');
+		if (href === '/') return path === '/' || path.startsWith('/vehicles');
+		return path === href || path.startsWith(href + '/');
 	}
 </script>
 

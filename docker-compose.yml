@@ -1,5 +1,7 @@
-# Production: app + PostgreSQL + daily backups + Caddy (automatic HTTPS).
-#   cp .env.example .env   # set POSTGRES_PASSWORD, DOMAIN
+# Production: app + PostgreSQL + daily backups.
+# HTTPS is terminated by an external reverse proxy that forwards to APP_BIND
+# (default 127.0.0.1:8080).
+#   cp .env.example .env   # set POSTGRES_PASSWORD
 #   docker compose up -d --build
 #   docker compose exec app autokarta create-admin --username owner
 name: autokarta
@@ -25,7 +27,10 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://autokarta:${POSTGRES_PASSWORD}@db:5432/autokarta
+      # Always true in production: the browser talks HTTPS to the proxy.
       COOKIE_SECURE: "true"
+    ports:
+      - "${APP_BIND:-127.0.0.1:8080}:8080"
     depends_on:
       db:
         condition: service_healthy
@@ -48,23 +53,5 @@ services:
       db:
         condition: service_healthy
 
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    environment:
-      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - app
-
 volumes:
   pgdata:
-  caddy_data:
-  caddy_config:

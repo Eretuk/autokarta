@@ -5,6 +5,32 @@
 	import { i18n, LOCALE_NAMES, LOCALES, setLocale, t, type Locale } from '$lib/i18n/index.svelte';
 	import { logout, session, setUser, type User } from '$lib/session.svelte';
 	import { setTheme, theme, THEMES } from '$lib/theme.svelte';
+	import { business, setBusinessSettings } from '$lib/settings.svelte';
+	import type { BusinessSettings, DistanceUnit } from '$lib/types';
+
+	const UNITS: DistanceUnit[] = ['km', 'mi'];
+	let biz = $state({ currency: business.currency, distance_unit: business.distance_unit });
+	let bizBusy = $state(false);
+	let bizMsg = $state<{ ok: boolean; text: string } | null>(null);
+
+	async function saveBusiness(e: SubmitEvent) {
+		e.preventDefault();
+		bizBusy = true;
+		bizMsg = null;
+		try {
+			setBusinessSettings(
+				await api<BusinessSettings>('PATCH', '/settings', {
+					currency: biz.currency.trim().toUpperCase(),
+					distance_unit: biz.distance_unit
+				})
+			);
+			bizMsg = { ok: true, text: t('settings.saved') };
+		} catch (err) {
+			bizMsg = { ok: false, text: errorMessage(err) };
+		} finally {
+			bizBusy = false;
+		}
+	}
 
 	let displayName = $state(session.user?.display_name ?? '');
 	let profileBusy = $state(false);
@@ -141,6 +167,39 @@
 	</form>
 </section>
 
+{#if session.user?.role === 'owner'}
+	<section class="card">
+		<h2>{t('settings.title')}</h2>
+		<p class="hint">{t('settings.hint')}</p>
+		<form onsubmit={saveBusiness}>
+			{#if bizMsg}
+				<div class="notice" class:ok={bizMsg.ok} class:error={!bizMsg.ok} role="status">{bizMsg.text}</div>
+			{/if}
+			<label class="field">
+				{t('settings.currency')}
+				<span class="hint">{t('settings.currencyHint')}</span>
+				<input type="text" bind:value={biz.currency} maxlength="3" autocapitalize="characters" autocomplete="off" required />
+			</label>
+			<span class="label">{t('settings.distanceUnit')}</span>
+			<p class="hint">{t('settings.distanceUnitHint')}</p>
+			<div class="segmented spaced-b">
+				{#each UNITS as u (u)}
+					<button type="button" class="btn" aria-pressed={biz.distance_unit === u} onclick={() => (biz.distance_unit = u)}
+						>{t(`units.${u}`)}</button
+					>
+				{/each}
+			</div>
+			<button class="btn primary" type="submit" disabled={bizBusy}>{t('common.saveChanges')}</button>
+		</form>
+	</section>
+{/if}
+
+<section class="card">
+	<h2>{t('scanner.title')}</h2>
+	<p class="hint">{t('scanner.intro')}</p>
+	<a class="btn" href="/scanner">{t('scanner.open')}</a>
+</section>
+
 <button class="btn danger block" type="button" onclick={signOut}>{t('account.signOut')}</button>
 
 <style>
@@ -149,5 +208,12 @@
 	}
 	.spaced {
 		margin-top: 14px;
+	}
+	.spaced-b {
+		margin-bottom: 14px;
+	}
+	.label {
+		display: block;
+		font-weight: 500;
 	}
 </style>

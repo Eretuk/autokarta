@@ -1,0 +1,19 @@
+# Development only: HTTPS in the local network, so phones can use the camera
+# (browsers allow getUserMedia only on secure origins). Proxies to the Vite
+# dev server running on the host. Started with the "https" profile of
+# docker-compose.dev.yml.
+#
+# The certificate comes from Caddy's own local CA. Either accept the browser
+# warning once, or install the root certificate on the phone:
+#   docker compose -f docker-compose.dev.yml cp caddy:/data/caddy/pki/authorities/local/root.crt .
+
+{
+	# Browsers send no SNI when the address is an IP, so tell Caddy which
+	# certificate to use for such connections.
+	default_sni {$LAN_HOST}
+}
+
+https://{$LAN_HOST}:8443, https://localhost:8443 {
+	tls internal
+	reverse_proxy host.docker.internal:5173
+}
