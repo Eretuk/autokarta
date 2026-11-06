@@ -1,0 +1,275 @@
+//! Passwords, sessions and the login rate limiter.
+//!
+//! Sessions are random 256-bit tokens kept in an HttpOnly cookie.
+//! The database stores only their SHA-256 hash.
+
+use std::{
+    collections::HashMap,
+    sync::{Mutex, OnceLock},
+    time::{Duration, Instant},
+};
+
+use anyhow::Context;
+use argon2::{
+    password_hash::{rand_core::OsRng, rand_core::RngCore, PasswordHash, SaltString},
+    Argon2, PasswordHasher, PasswordVerifier,
+};
+use axum::{extract::FromRequestParts, http::request::Parts};
+use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use serde::Serialize;
+use sha2::{Digest, Sha256};
+use uuid::Uuid;
+
+use crate::{
+    error::{AppError, AppResult},
+    state::{AppState, Settings},
+};
+
+pub const SESSION_COOKIE: &str = "autokarta_session";
+
+// ---------- passwords ----------
+
+/// Argon2 is deliberately slow, so it runs off the async executor.
+pub async fn hash_password(password: String) -> anyhow::Result<String> {
+    tokio::task::spawn_blocking(move || {
+        let salt = SaltString::generate(&mut OsRng);
+        Argon2::default()
+            .hash_password(password.as_bytes(), &salt)
+            .map(|h| h.to_string())
+            .map_err(|e| anyhow::anyhow!("password hashing failed: {e}"))
+    })
+    .await
+    .context("hashing task panicked")?
+}
+
+/// Verifies a password. With `hash = None` (unknown user) it checks against a
+/// dummy hash anyway, so response time does not reveal which usernames exist.
+pub async fn verify_password(password: String, hash: Option<String>) -> bool {
+    tokio::task::spawn_blocking(move || {
+        let hash = hash.unwrap_or_else(|| dummy_hash().to_string());
+        let Ok(parsed) = PasswordHash::new(&hash) else {
+            return false;
+        };
+        Argon2::default()
+            .verify_password(password.as_bytes(), &parsed)
+            .is_ok()
+    })
+    .await
+    .unwrap_or(false)
+}
+
+fn dummy_hash() -> &'static str {
+    static HASH: OnceLock<String> = OnceLock::new();
+    HASH.get_or_init(|| {
+        let salt = SaltString::generate(&mut OsRng);
+        Argon2::default()
+            .hash_password(b"not-a-real-password", &salt)
+            .expect("dummy hash")
+            .to_string()
+    })
+}
+
+// ---------- sessions ----------
+
+fn hash_token(token: &str) -> Vec<u8> {
+    Sha256::digest(token.as_bytes()).to_vec()
+}
+
+pub async fn create_session(
+    state: &AppState,
+    user_id: Uuid,
+    user_agent: Option<String>,
+) -> AppResult<String> {
+    let mut bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    let token = URL_SAFE_NO_PAD.encode(bytes);
+
+    sqlx::query(
+        "INSERT INTO sessions (token_hash, user_id, expires_at, user_agent)
+         VALUES ($1, $2, now() + make_interval(secs => $3), $4)",
+    )
+    .bind(hash_token(&token))
+    .bind(user_id)
+    .bind(state.settings.session_ttl.whole_seconds() as f64)
+    .bind(user_agent.map(|ua| ua.chars().take(300).collect::<String>()))
+    .execute(&state.db)
+    .await?;
+
+    Ok(token)
+}
+
+pub async fn delete_session(state: &AppState, token: &str) -> AppResult<()> {
+    sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
+        .bind(hash_token(token))
+        .execute(&state.db)
+        .await?;
+    Ok(())
+}
+
+pub fn session_cookie(settings: &Settings, token: String) -> Cookie<'static> {
+    Cookie::build((SESSION_COOKIE, token))
+        .http_only(true)
+        .secure(settings.cookie_secure)
+        .same_site(SameSite::Lax)
+        .path("/")
+        .max_age(settings.session_ttl)
+        .build()
+}
+
+pub fn removal_cookie() -> Cookie<'static> {
+    Cookie::build((SESSION_COOKIE, "")).path("/").build()
+}
+
+/// Removes expired sessions once an hour.
+pub async fn cleanup_expired_sessions(db: sqlx::PgPool) {
+    let mut tick = tokio::time::interval(Duration::from_secs(3600));
+    loop {
+        tick.tick().await;
+        match sqlx::query("DELETE FROM sessions WHERE expires_at < now()")
+            .execute(&db)
+            .await
+        {
+            Ok(r) if r.rows_affected() > 0 => {
+                tracing::info!(removed = r.rows_affected(), "expired sessions removed")
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!(error = ?e, "session cleanup failed"),
+        }
+    }
+}
+
+// ---------- current user extractors ----------
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct CurrentUser {
+    pub id: Uuid,
+    pub username: String,
+    pub display_name: String,
+    pub role: String,
+    pub locale: String,
+}
+
+impl CurrentUser {
+    pub fn is_owner(&self) -> bool {
+        self.role == "owner"
+    }
+}
+
+impl FromRequestParts<AppState> for CurrentUser {
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> AppResult<Self> {
+        let jar = CookieJar::from_headers(&parts.headers);
+        let token = jar
+            .get(SESSION_COOKIE)
+            .map(|c| c.value().to_owned())
+            .ok_or(AppError::Unauthorized)?;
+        let token_hash = hash_token(&token);
+
+        let user = sqlx::query_as::<_, CurrentUser>(
+            "SELECT u.id, u.username, u.display_name, u.role, u.locale
+               FROM sessions s JOIN users u ON u.id = s.user_id
+              WHERE s.token_hash = $1 AND s.expires_at > now() AND u.is_active",
+        )
+        .bind(&token_hash)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+        // Cheap activity tracking: at most one write per session every 10 minutes.
+        sqlx::query(
+            "UPDATE sessions SET last_seen_at = now()
+              WHERE token_hash = $1 AND last_seen_at < now() - interval '10 minutes'",
+        )
+        .bind(&token_hash)
+        .execute(&state.db)
+        .await?;
+
+        Ok(user)
+    }
+}
+
+/// Like [`CurrentUser`], but rejects anyone who is not an owner.
+pub struct Owner(pub CurrentUser);
+
+impl FromRequestParts<AppState> for Owner {
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> AppResult<Self> {
+        let user = CurrentUser::from_request_parts(parts, state).await?;
+        if !user.is_owner() {
+            return Err(AppError::Forbidden);
+        }
+        Ok(Owner(user))
+    }
+}
+
+// ---------- login rate limiter ----------
+
+const MAX_FAILURES: u32 = 5;
+const WINDOW: Duration = Duration::from_secs(15 * 60);
+
+/// In-memory limiter: after 5 failed logins for a username, further attempts
+/// are refused for 15 minutes. Resets on restart, which is fine for one instance.
+#[derive(Default)]
+pub struct LoginLimiter {
+    entries: Mutex<HashMap<String, (u32, Instant)>>,
+}
+
+impl LoginLimiter {
+    pub fn check(&self, key: &str) -> AppResult<()> {
+        let entries = self.entries.lock().expect("limiter lock");
+        if let Some((failures, since)) = entries.get(key) {
+            let elapsed = since.elapsed();
+            if *failures >= MAX_FAILURES && elapsed < WINDOW {
+                return Err(AppError::TooManyAttempts {
+                    retry_after_secs: (WINDOW - elapsed).as_secs().max(1),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    pub fn record_failure(&self, key: &str) {
+        let mut entries = self.entries.lock().expect("limiter lock");
+        if entries.len() > 10_000 {
+            entries.retain(|_, (_, since)| since.elapsed() < WINDOW);
+        }
+        let entry = entries.entry(key.to_owned()).or_insert((0, Instant::now()));
+        if entry.1.elapsed() >= WINDOW {
+            *entry = (0, Instant::now());
+        }
+        entry.0 += 1;
+    }
+
+    pub fn reset(&self, key: &str) {
+        self.entries.lock().expect("limiter lock").remove(key);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn limiter_blocks_after_max_failures() {
+        let l = LoginLimiter::default();
+        for _ in 0..MAX_FAILURES {
+            assert!(l.check("ivan").is_ok());
+            l.record_failure("ivan");
+        }
+        assert!(l.check("ivan").is_err());
+        assert!(l.check("anna").is_ok());
+        l.reset("ivan");
+        assert!(l.check("ivan").is_ok());
+    }
+
+    #[tokio::test]
+    async fn password_roundtrip() {
+        let hash = hash_password("correct horse".into()).await.unwrap();
+        assert!(verify_password("correct horse".into(), Some(hash.clone())).await);
+        assert!(!verify_password("wrong".into(), Some(hash)).await);
+        assert!(!verify_password("anything".into(), None).await);
+    }
+}

@@ -1,0 +1,70 @@
+# Production: app + PostgreSQL + daily backups + Caddy (automatic HTTPS).
+#   cp .env.example .env   # set POSTGRES_PASSWORD, DOMAIN
+#   docker compose up -d --build
+#   docker compose exec app autokarta create-admin --username owner
+name: autokarta
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: autokarta
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: autokarta
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autokarta -d autokarta"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    image: autokarta:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://autokarta:${POSTGRES_PASSWORD}@db:5432/autokarta
+      COOKIE_SECURE: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGUSER: autokarta
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: autokarta
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_TIME: ${BACKUP_TIME:-03:30}
+    volumes:
+      - ./deploy/backup.sh:/backup.sh:ro
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
