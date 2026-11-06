@@ -4,14 +4,17 @@
 		"hide": "Ukryj",
 		"close": "Zamknij",
 		"loading": "Wczytywanie…",
-		"saveChanges": "Zapisz zmiany"
+		"saveChanges": "Zapisz zmiany",
+		"cancel": "Anuluj",
+		"delete": "Usuń"
 	},
 	"nav": {
 		"main": "Menu główne",
 		"home": "Start",
-		"scanner": "Skaner",
 		"staff": "Pracownicy",
-		"account": "Konto"
+		"account": "Konto",
+		"vehicles": "Pojazdy",
+		"orders": "Zlecenia"
 	},
 	"login": {
 		"title": "Logowanie",
@@ -20,13 +23,6 @@
 		"submit": "Zaloguj się",
 		"signingIn": "Logowanie…",
 		"forgot": "Nie pamiętasz hasła? Poproś właściciela o ustawienie nowego."
-	},
-	"home": {
-		"greeting": "Dzień dobry, {name}",
-		"soonTitle": "Następne będą pojazdy i zlecenia",
-		"soonBody": "To wczesna wersja. Na razie możesz zarządzać pracownikami, zmieniać ustawienia i przetestować skaner w aparacie.",
-		"tryScanner": "Przetestuj skaner",
-		"manageStaff": "Pracownicy"
 	},
 	"roles": {
 		"owner": "Właściciel",
@@ -109,7 +105,9 @@
 			"noCamera": "Na tym urządzeniu nie znaleziono aparatu.",
 			"generic": "Nie udało się włączyć aparatu. Zamknij inne aplikacje, które go używają, i spróbuj ponownie.",
 			"engine": "Skaner nie uruchomił się w tej przeglądarce. Spróbuj aktualnego Chrome lub Safari."
-		}
+		},
+		"scanCode": "Zeskanuj kod",
+		"open": "Otwórz test skanera"
 	},
 	"notFound": {
 		"title": "Nie znaleziono strony",
@@ -141,6 +139,173 @@
 		"username_taken": "Ten login jest już zajęty. Wybierz inny.",
 		"cannot_demote_self": "Nie możesz zmienić własnej roli ani wyłączyć swojego konta.",
 		"wrong_current_password": "Obecne hasło jest nieprawidłowe.",
-		"passwords_do_not_match": "Nowe hasła się nie zgadzają."
+		"passwords_do_not_match": "Nowe hasła się nie zgadzają.",
+		"vin_taken": "Pojazd z tym numerem VIN już istnieje.",
+		"frame_number_taken": "Pojazd z tym numerem ramy już istnieje.",
+		"vehicle_identifier_required": "Podaj rejestrację, VIN lub numer ramy.",
+		"invalid_vin": "VIN: 11–17 liter łacińskich i cyfr (bez I, O i Q).",
+		"invalid_frame_number": "Numer ramy: 5–24 znaki — litery łacińskie, cyfry i myślnik.",
+		"invalid_plate": "Rejestracja: 2–12 liter i cyfr.",
+		"invalid_year": "Podaj rok, np. 2008.",
+		"invalid_odometer": "Podaj przebieg jako liczbę całkowitą.",
+		"odometer_lower_than_previous": "Przebieg jest mniejszy niż poprzednio.",
+		"work_order_closed": "Zlecenie jest zamknięte. Otwórz je ponownie, aby wprowadzić zmiany.",
+		"invalid_quantity": "Podaj ilość większą od zera, np. 1 lub 1,5.",
+		"invalid_price": "Podaj cenę, np. 120 lub 120,50.",
+		"invalid_status": "Nieznany status.",
+		"invalid_currency": "Waluta to trzyliterowy kod, np. PLN.",
+		"invalid_distance_unit": "Wybierz km lub mile.",
+		"invalid_client_name": "Podaj imię klienta.",
+		"invalid_phone": "Sprawdź numer telefonu.",
+		"text_too_long": "Tekst jest za długi.",
+		"invalid_vehicle_role": "Wybierz rodzaj pojazdu z listy.",
+		"unknown_client": "Ten klient już nie istnieje. Wybierz innego.",
+		"owner_change_before_start": "Data jest wcześniejsza niż początek obecnej własności.",
+		"reading_belongs_to_work_order": "Ten odczyt należy do zlecenia. Zmień go tam.",
+		"invalid_description": "Opisz pracę."
+	},
+	"units": {
+		"km": "km",
+		"mi": "mile"
+	},
+	"vehicles": {
+		"title": "Pojazdy",
+		"searchLabel": "Znajdź pojazd",
+		"searchPlaceholder": "Rejestracja, VIN, nr ramy lub właściciel",
+		"scanVin": "Zeskanuj VIN",
+		"add": "Dodaj pojazd",
+		"results": "Znalezione",
+		"recent": "Ostatnie pojazdy",
+		"noResults": "Nic nie znaleziono. Sprawdź pisownię lub dodaj pojazd.",
+		"empty": "Brak pojazdów. Dodaj pierwszy.",
+		"unnamed": "Marka i model nie podane",
+		"inWork": "W naprawie",
+		"addTitle": "Nowy pojazd",
+		"addSubmit": "Dodaj pojazd",
+		"identification": "Identyfikacja",
+		"identificationHint": "Wypełnij co najmniej jedno: rejestracja, VIN lub numer ramy.",
+		"plate": "Rejestracja",
+		"vin": "VIN",
+		"frameNumber": "Numer ramy",
+		"frameNumberHint": "Dla japońskich aut bez VIN, np. GX100-1234567.",
+		"description": "Pojazd",
+		"make": "Marka",
+		"model": "Model",
+		"year": "Rok",
+		"engine": "Silnik",
+		"role": "Rodzaj",
+		"roles": {
+			"customer": "Auto klienta",
+			"fleet": "Własna flota",
+			"for_sale": "Na sprzedaż"
+		},
+		"odometerUnit": "Licznik pokazuje",
+		"note": "Notatka",
+		"ownerAndMileage": "Właściciel i przebieg",
+		"owner": "Właściciel",
+		"currentOdometer": "Obecny przebieg, {unit}",
+		"openExisting": "Otwórz istniejący pojazd",
+		"odometer": "Przebieg",
+		"noOdometer": "jeszcze nie zapisany",
+		"edit": "Edytuj dane",
+		"noOwner": "Właściciel nie podany.",
+		"changeOwner": "Zmień właściciela",
+		"setOwner": "Podaj właściciela",
+		"pastOwners": {
+			"one": "{count} poprzedni właściciel",
+			"few": "{count} poprzednich właścicieli",
+			"many": "{count} poprzednich właścicieli",
+			"other": "{count} poprzedniego właściciela"
+		},
+		"ownedFromTo": "{from} – {to}",
+		"noWorkOrders": "Brak zleceń.",
+		"changeOwnerHint": "Obecny właściciel przejdzie do historii. Historia serwisowa zostaje przy pojeździe.",
+		"newOwner": "Nowy właściciel",
+		"ownerSince": "Właściciel od",
+		"removeOwner": "Obecnie właściciel nieznany"
+	},
+	"clients": {
+		"change": "Zmień",
+		"name": "Imię i nazwisko",
+		"phone": "Telefon",
+		"create": "Dodaj klienta",
+		"searchPlaceholder": "Szukaj po nazwisku lub telefonie",
+		"addNew": "Nowy klient"
+	},
+	"odometer": {
+		"confirmLower": "Przebieg jest mniejszy niż poprzednio. Zapisać mimo to? (Np. wymieniono licznik.)",
+		"confirmDelete": "Usunąć ten odczyt przebiegu?",
+		"add": "Zapisz przebieg",
+		"history": "Historia przebiegu",
+		"last": "Ostatni: {value}",
+		"reading": "Przebieg, {unit}",
+		"date": "Data",
+		"save": "Zapisz odczyt"
+	},
+	"workOrders": {
+		"title": "Zlecenia",
+		"new": "Nowe zlecenie",
+		"number": "Zlecenie nr {number}",
+		"itemCount": {
+			"one": "{count} usługa",
+			"few": "{count} usługi",
+			"many": "{count} usług",
+			"other": "{count} usługi"
+		},
+		"statuses": {
+			"open": "W naprawie",
+			"done": "Gotowe",
+			"cancelled": "Anulowane"
+		},
+		"odometerNow": "Przebieg, {unit}",
+		"complaint": "Zgłoszenie klienta",
+		"complaintHint": "Czego chciał klient, jego słowami.",
+		"create": "Otwórz zlecenie",
+		"filter": "Pokaż",
+		"filters": {
+			"open": "W naprawie",
+			"done": "Gotowe",
+			"all": "Wszystkie"
+		},
+		"noneOpen": "Obecnie nie ma aut w naprawie.",
+		"none": "Brak zleceń.",
+		"startHint": "Aby otworzyć zlecenie, najpierw znajdź pojazd.",
+		"notRecorded": "—",
+		"notes": "Notatki wewnętrzne",
+		"notesHint": "Widzą je tylko pracownicy.",
+		"editDetails": "Edytuj",
+		"items": "Wykonane prace",
+		"noItems": "Nie zapisano jeszcze prac.",
+		"noPrice": "Bez ceny",
+		"total": "Razem",
+		"unpriced": {
+			"one": "{count} usługa bez ceny",
+			"few": "{count} usługi bez ceny",
+			"many": "{count} usług bez ceny",
+			"other": "{count} usługi bez ceny"
+		},
+		"addWork": "Dodaj pracę",
+		"addWorkPlaceholder": "np. wymiana oleju i filtra",
+		"quantity": "Ilość / godziny",
+		"unitPrice": "Cena, {currency}",
+		"addItem": "Dodaj pracę",
+		"markDone": "Gotowe",
+		"cancel": "Anuluj zlecenie",
+		"closedHint": "Zlecenie jest zamknięte. Otwórz je ponownie, aby wprowadzić zmiany.",
+		"reopen": "Otwórz ponownie",
+		"editItem": "Edytuj pracę",
+		"description": "Opis",
+		"deleteItem": "Usuń pozycję",
+		"confirmDeleteItem": "Usunąć tę pozycję ze zlecenia?",
+		"confirmCancel": "Anulować zlecenie? Zostanie w historii jako anulowane."
+	},
+	"settings": {
+		"title": "Ustawienia warsztatu",
+		"hint": "Dotyczą wszystkich pracowników.",
+		"saved": "Ustawienia zapisane.",
+		"currency": "Waluta",
+		"currencyHint": "Trzyliterowy kod, np. PLN, EUR.",
+		"distanceUnit": "Jednostka przebiegu",
+		"distanceUnitHint": "Domyślna dla nowych pojazdów. Każdy pojazd ma jednostkę swojego licznika."
 	}
 }

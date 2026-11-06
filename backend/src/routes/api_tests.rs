@@ -194,6 +194,8 @@ async fn mechanics_never_see_or_set_prices(db: PgPool) {
         )
         .await;
     assert_eq!(st, StatusCode::CREATED);
+    // The refused attempt above must not use up an order number.
+    assert_eq!(wo["number"], 1);
     let wid = s(&wo["id"]).to_string();
     let items = format!("/api/work-orders/{wid}/items");
 
@@ -351,4 +353,35 @@ async fn ownership_history_and_work_order_snapshot(db: PgPool) {
         0,
         "past owner's phone must not match"
     );
+}
+
+#[sqlx::test]
+async fn confirmed_lower_reading_becomes_the_latest(db: PgPool) {
+    let api = Api::new(db).await;
+    let mech = api.login("mech").await;
+    let (_, v) = api
+        .call(
+            &mech,
+            "POST",
+            "/api/vehicles",
+            Some(json!({"plate": "GD 555", "odometer": 120000})),
+        )
+        .await;
+    let readings = format!("/api/vehicles/{}/odometer", s(&v["id"]));
+    let (st, _) = api
+        .call(
+            &mech,
+            "POST",
+            &readings,
+            Some(json!({"reading": 119000, "confirm_lower": true})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let (_, found) = api.call(&mech, "GET", "/api/vehicles?q=gd555", None).await;
+    assert_eq!(found[0]["last_odometer"], 119000);
+    // The correction is now the reference for the next check.
+    let (st, _) = api
+        .call(&mech, "POST", &readings, Some(json!({"reading": 119500})))
+        .await;
+    assert_eq!(st, StatusCode::CREATED);
 }

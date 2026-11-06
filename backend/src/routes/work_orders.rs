@@ -114,6 +114,11 @@ async fn create(
 
     let mut tx = state.db.begin().await?;
     vehicles::lock_vehicle(&mut tx, req.vehicle_id).await?;
+    // Check before inserting the order: a rolled-back insert would still
+    // use up an order number and leave a gap.
+    if let (Some(reading), false) = (odometer, req.confirm_lower) {
+        vehicles::ensure_not_lower(&mut tx, req.vehicle_id, reading, None).await?;
+    }
     // Remember who brought the car this time: owners change later.
     let id: Uuid = sqlx::query_scalar(
         "INSERT INTO work_orders (vehicle_id, client_id, complaint, created_by)

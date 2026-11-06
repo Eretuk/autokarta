@@ -106,7 +106,8 @@ rotation plus an off-site copy are a hard requirement before real data goes in.
 `backend/` implements:
 - `autokarta create-admin --username <name>`: prompts for password, creates an owner.
 - `autokarta` / `autokarta serve`: HTTP server.
-- Migration `users` + `sessions` (`backend/migrations/`).
+- Migrations: `users` + `sessions`; vehicles, clients, ownership history,
+  odometer readings, work orders + items, business settings (`backend/migrations/`).
 - Session auth: 256-bit random token in an HttpOnly, SameSite=Lax cookie
   `autokarta_session`; DB stores only its SHA-256 hash. `COOKIE_SECURE=false`
   only for local HTTP development.
@@ -128,16 +129,38 @@ API (all JSON, prefix `/api`):
 | POST | `/users` | owner | `{username, display_name, role, password, locale?}` |
 | PATCH | `/users/{id}` | owner | `{display_name?, role?, is_active?}`; cannot demote/deactivate self |
 | POST | `/users/{id}/password` | owner | `{password}`; signs the user out everywhere |
+| GET | `/settings` | staff | `{currency, distance_unit}` |
+| PATCH | `/settings` | owner | `{currency?, distance_unit?}` |
+| GET | `/clients?q=` | staff | search by name or phone |
+| POST | `/clients` | staff | `{name, phone?, note?}` |
+| PUT | `/clients/{id}` | staff | same body (no UI yet) |
+| GET | `/vehicles?q=` | staff | search by plate, VIN or frame number, ignoring spaces/dashes |
+| POST | `/vehicles` | staff | vehicle fields + `owner_id?`, `odometer?` |
+| GET/PUT | `/vehicles/{id}` | staff | detail with owner history, readings, work orders |
+| PUT | `/vehicles/{id}/owner` | staff | `{client_id?, since?}`; closes the current ownership |
+| POST | `/vehicles/{id}/odometer` | staff | `{reading, read_on?, confirm_lower?}` |
+| DELETE | `/vehicles/{id}/odometer/{reading_id}` | owner | manual readings only |
+| GET | `/work-orders?status=` | staff | |
+| POST | `/work-orders` | staff | `{vehicle_id, odometer?, complaint?, confirm_lower?}` |
+| GET/PATCH | `/work-orders/{id}` | staff | `{complaint?, notes?, status?, odometer?, confirm_lower?}` |
+| POST | `/work-orders/{id}/items` | staff | `{description, quantity_milli?, unit_price_minor?}` |
+| PATCH/DELETE | `/work-orders/{id}/items/{item_id}` | staff | |
 
-All endpoints were tested manually against PostgreSQL (login, roles, 403 for
-mechanics, duplicate username 409, validation 422, rate limit 429, logout,
-password change keeping the current session).
+Prices and totals are owner-only: mechanics never receive them and cannot set
+them. A reading lower than the latest one returns 409
+`odometer_lower_than_previous` unless `confirm_lower` is sent. API tests in
+`backend/src/routes/api_tests.rs` run against PostgreSQL via `sqlx::test`
+(`DATABASE_URL` must point to a server where the user may create databases).
 
 `frontend/` implements (roadmap step 1): login, app shell (bottom tab bar on
 phones, header nav on wide screens), staff management (owner only), account
 page (name, language saved to profile, per-device theme, password change,
 sign out), camera scanner test page (`/scanner`), PWA manifest + service
-worker, en/pl/ru. The backend sets `Cache-Control`: `immutable` for
+worker, en/pl/ru. Step 2: home page is vehicle search (typing or scanning
+VIN/plate), new vehicle form with owner picker, vehicle page (edit, owner
+change, odometer history, work orders), work order list and work order page
+(items, prices for owners, status, mileage); owners set currency and distance
+unit on the account page. The backend sets `Cache-Control`: `immutable` for
 `/_app/immutable/*`, `no-cache` for other static files.
 
 Deployment: `Dockerfile` (node build + cargo-chef + debian-slim, non-root),

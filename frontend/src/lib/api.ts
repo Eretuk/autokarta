@@ -14,7 +14,7 @@ export class ApiError extends Error {
 	}
 }
 
-type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /** Called when the session is gone (expired, revoked, account deactivated). */
 let onUnauthorized: (() => void) | null = null;

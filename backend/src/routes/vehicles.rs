@@ -55,7 +55,7 @@ const SUMMARY_SELECT: &str = "
     SELECT v.id, v.plate, v.vin, v.frame_number, v.make, v.model, v.year, v.role, v.odometer_unit,
            c.name AS owner_name,
            (SELECT r.reading FROM odometer_readings r WHERE r.vehicle_id = v.id
-             ORDER BY r.read_on DESC, r.reading DESC LIMIT 1) AS last_odometer,
+             ORDER BY r.read_on DESC, r.created_at DESC LIMIT 1) AS last_odometer,
            (SELECT count(*) FROM work_orders w WHERE w.vehicle_id = v.id AND w.status = 'open') AS open_work_orders
       FROM vehicles v
       LEFT JOIN vehicle_ownerships o ON o.vehicle_id = v.id AND o.ended_on IS NULL
@@ -379,18 +379,7 @@ pub(crate) async fn insert_reading(
     confirm_lower: bool,
 ) -> AppResult<()> {
     if !confirm_lower {
-        let latest: Option<i32> = sqlx::query_scalar(
-            "SELECT reading FROM odometer_readings
-              WHERE vehicle_id = $1 AND ($2::uuid IS NULL OR work_order_id IS DISTINCT FROM $2)
-              ORDER BY read_on DESC, reading DESC LIMIT 1",
-        )
-        .bind(vehicle_id)
-        .bind(work_order_id)
-        .fetch_optional(&mut **tx)
-        .await?;
-        if latest.is_some_and(|l| reading < l) {
-            return Err(AppError::Conflict("odometer_lower_than_previous"));
-        }
+        ensure_not_lower(tx, vehicle_id, reading, work_order_id).await?;
     }
 
     match work_order_id {
@@ -422,6 +411,30 @@ pub(crate) async fn insert_reading(
         }
     }
     touch_vehicle(tx, vehicle_id).await
+}
+
+/// Refuses a reading lower than the latest one (going backwards is almost
+/// always a typo). The latest is the most recently recorded on the latest
+/// date, so a confirmed correction becomes the new reference.
+pub(crate) async fn ensure_not_lower(
+    conn: &mut PgConnection,
+    vehicle_id: Uuid,
+    reading: i32,
+    work_order_id: Option<Uuid>,
+) -> AppResult<()> {
+    let latest: Option<i32> = sqlx::query_scalar(
+        "SELECT reading FROM odometer_readings
+          WHERE vehicle_id = $1 AND ($2::uuid IS NULL OR work_order_id IS DISTINCT FROM $2)
+          ORDER BY read_on DESC, created_at DESC LIMIT 1",
+    )
+    .bind(vehicle_id)
+    .bind(work_order_id)
+    .fetch_optional(conn)
+    .await?;
+    if latest.is_some_and(|l| reading < l) {
+        return Err(AppError::Conflict("odometer_lower_than_previous"));
+    }
+    Ok(())
 }
 
 /// Owners may delete a mistyped manual reading. Readings of a work order are
@@ -569,7 +582,7 @@ async fn load_detail(state: &AppState, id: Uuid, user: &CurrentUser) -> AppResul
         "SELECT r.id, r.reading, r.read_on, r.work_order_id, w.number AS work_order_number
            FROM odometer_readings r LEFT JOIN work_orders w ON w.id = r.work_order_id
           WHERE r.vehicle_id = $1
-          ORDER BY r.read_on DESC, r.reading DESC
+          ORDER BY r.read_on DESC, r.created_at DESC
           LIMIT 50",
     )
     .bind(id)
