@@ -385,3 +385,20 @@ async fn confirmed_lower_reading_becomes_the_latest(db: PgPool) {
         .await;
     assert_eq!(st, StatusCode::CREATED);
 }
+
+#[sqlx::test]
+async fn security_headers_do_not_depend_on_the_proxy(db: PgPool) {
+    let api = Api::new(db).await;
+    let res = api
+        .app
+        .clone()
+        .oneshot(Request::get("/api/nope").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let h = res.headers();
+    assert_eq!(h["referrer-policy"], "no-referrer");
+    assert_eq!(h["x-content-type-options"], "nosniff");
+    assert_eq!(h["x-frame-options"], "DENY");
+    // Plain HTTP (cookie_secure = false): HSTS would pin localhost to HTTPS.
+    assert!(h.get("strict-transport-security").is_none());
+}

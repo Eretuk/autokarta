@@ -46,9 +46,36 @@ pub fn router(state: AppState, static_dir: Option<&Path>) -> Router {
             .layer(middleware::from_fn(static_cache_headers));
     }
 
-    app.layer(CompressionLayer::new())
-        .layer(TraceLayer::new_for_http())
-        .with_state(state)
+    let hsts = state.settings.cookie_secure;
+    app.layer(middleware::from_fn(move |req, next| {
+        security_headers(req, next, hsts)
+    }))
+    .layer(CompressionLayer::new())
+    .layer(TraceLayer::new_for_http())
+    .with_state(state)
+}
+
+/// Set here rather than in a reverse proxy: production runs behind an
+/// external proxy we do not control, and share links carry a secret token in
+/// the URL that must never leak via `Referer`. HSTS only over HTTPS, so local
+/// development on plain HTTP keeps working.
+async fn security_headers(req: Request, next: Next, hsts: bool) -> Response {
+    let mut res = next.run(req).await;
+    let h = res.headers_mut();
+    let mut set = |name: &'static str, value: &'static str| {
+        h.entry(name).or_insert(HeaderValue::from_static(value));
+    };
+    set("x-content-type-options", "nosniff");
+    set("x-frame-options", "DENY");
+    set("referrer-policy", "no-referrer");
+    set(
+        "permissions-policy",
+        "camera=(self), microphone=(), geolocation=()",
+    );
+    if hsts {
+        set("strict-transport-security", "max-age=31536000");
+    }
+    res
 }
 
 /// Hashed build assets never change and can be cached forever. Everything

@@ -42,14 +42,24 @@ npm run dev            # http://localhost:5173, proxies /api to :8080
 
 ## Production
 
-One server with Docker. DNS of your domain must point to it, ports 80 and
-443 open. Caddy obtains the HTTPS certificate automatically (the camera
-scanner only works over HTTPS).
+One server with Docker. The app must be reached over HTTPS (session cookies
+are `Secure`, and the camera scanner only works over HTTPS), so put a reverse
+proxy in front of it.
 
 ```bash
-cp .env.example .env     # set POSTGRES_PASSWORD (long random) and DOMAIN
+cp .env.example .env     # set POSTGRES_PASSWORD (long random)
 docker compose up -d --build
 docker compose exec app autokarta create-admin --username owner
+```
+
+The reverse proxy (nginx, Traefik, Caddy, ...) only terminates TLS and
+forwards the domain to `APP_BIND` (default `127.0.0.1:8080`). The app sets its
+own security headers. For example, with Caddy:
+
+```
+autokarta.example.com {
+	reverse_proxy 127.0.0.1:8080
+}
 ```
 
 ### Backups

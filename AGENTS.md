@@ -164,8 +164,13 @@ unit on the account page. The backend sets `Cache-Control`: `immutable` for
 `/_app/immutable/*`, `no-cache` for other static files.
 
 Deployment: `Dockerfile` (node build + cargo-chef + debian-slim, non-root),
-`docker-compose.yml` (db, app, backup, caddy), `deploy/Caddyfile`,
-`deploy/backup.sh` (daily `pg_dump` into `./backups` with rotation). **Off-site
+`docker-compose.yml` (db, app, backup; **no proxy**: production runs behind
+an external reverse proxy that terminates TLS and forwards to `APP_BIND`),
+`deploy/backup.sh` (daily `pg_dump` into `./backups` with rotation).
+Security headers (Referrer-Policy, nosniff, frame deny, Permissions-Policy,
+HSTS when `COOKIE_SECURE`) are set by the backend, never only in a proxy.
+Dev HTTPS for phones: `docker-compose.dev.yml --profile https` (Caddy with
+`tls internal` on `LAN_HOST:8443`, proxies to Vite). **Off-site
 backup copy is not automated yet.** CI: `.github/workflows/ci.yml`.
 
 ## 5. Roadmap (in order)
@@ -173,7 +178,7 @@ backup copy is not automated yet.** CI: `.github/workflows/ci.yml`.
 1. Frontend skeleton: login, app shell, staff management, account page
    (change password, language), camera scanner test page. Production
    `Dockerfile` (multi-stage, cargo-chef), `docker-compose.yml` with app,
-   PostgreSQL, backup service and Caddy (automatic HTTPS), CI workflow.
+   PostgreSQL and backup service (HTTPS via an external reverse proxy), CI workflow.
 2. Vehicles, odometer readings, work orders.
 3. Parts stock with scanning, consumption into work orders, low-stock list.
 4. Public share link page.

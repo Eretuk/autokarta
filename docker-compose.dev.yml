@@ -20,5 +20,22 @@ services:
       interval: 5s
       retries: 10
 
+  # HTTPS for testing on a phone in the local network (camera needs it).
+  # Start: docker compose -f docker-compose.dev.yml --profile https up -d
+  # Then open https://<LAN_HOST>:8443 (Vite must run with `npm run dev -- --host`).
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["https"]
+    environment:
+      LAN_HOST: ${LAN_HOST:-localhost}
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./deploy/Caddyfile.dev:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 volumes:
   pgdata:
+  caddy_data:
