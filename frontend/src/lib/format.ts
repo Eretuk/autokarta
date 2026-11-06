@@ -98,3 +98,28 @@ export function asVin(text: string): string | null {
 	if (v.length === 18 && v.startsWith('I')) v = v.slice(1);
 	return /^[A-HJ-NPR-Z0-9]{17}$/.test(v) ? v : null;
 }
+
+/**
+ * Which identifier field a search text most likely belongs to, so "Add
+ * vehicle" after an empty search can prefill it. Text that fits none of
+ * them (a scanned part barcode, an owner's name) prefills nothing rather
+ * than landing in the wrong field.
+ */
+export function guessIdentifier(
+	text: string
+): { field: 'vin' | 'frame_number' | 'plate'; value: string } | null {
+	const vin = asVin(text);
+	if (vin) return { field: 'vin', value: vin };
+	const v = text.trim().toUpperCase();
+	// Japanese frame number: model code, dash, serial ("NHW10-0030520").
+	if (/^[A-Z0-9]{2,10}-\d{4,8}$/.test(v.replace(/\s/g, ''))) {
+		return { field: 'frame_number', value: v.replace(/\s/g, '') };
+	}
+	// Plates are short and mix letters with digits; long digit-only codes
+	// are barcodes.
+	const compact = v.replace(/[\s-]/g, '');
+	if (/^[\p{L}\d]{2,10}$/u.test(compact) && /\p{L}/u.test(compact) && /\d/.test(compact)) {
+		return { field: 'plate', value: v.replace(/\s+/g, ' ') };
+	}
+	return null;
+}

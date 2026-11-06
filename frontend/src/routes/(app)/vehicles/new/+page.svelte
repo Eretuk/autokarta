@@ -4,20 +4,20 @@
 	import { api, ApiError, errorMessage } from '$lib/api';
 	import ClientPicker from '$lib/components/ClientPicker.svelte';
 	import VehicleFields, { vehicleBody, type VehicleForm } from '$lib/components/VehicleFields.svelte';
-	import { asVin } from '$lib/format';
+	import { guessIdentifier } from '$lib/format';
 	import { parseReading } from '$lib/odometer';
 	import { t } from '$lib/i18n/index.svelte';
 	import { business } from '$lib/settings.svelte';
 	import type { Client, VehicleDetail } from '$lib/types';
 
-	// Coming from a search that found nothing: reuse what was typed.
-	const typed = (page.url.searchParams.get('q') ?? '').trim();
-	const typedVin = asVin(typed);
+	// Coming from a search that found nothing: reuse what was typed or
+	// scanned, in the field it looks like.
+	const guess = guessIdentifier(page.url.searchParams.get('q') ?? '');
 
 	let form = $state<VehicleForm>({
-		plate: typedVin ? '' : typed,
-		vin: typedVin ?? '',
-		frame_number: '',
+		plate: guess?.field === 'plate' ? guess.value : '',
+		vin: guess?.field === 'vin' ? guess.value : '',
+		frame_number: guess?.field === 'frame_number' ? guess.value : '',
 		make: '',
 		model: '',
 		year: '',
