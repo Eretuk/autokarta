@@ -4,7 +4,7 @@
 	import { api, ApiError, errorMessage } from '$lib/api';
 	import ClientPicker from '$lib/components/ClientPicker.svelte';
 	import VehicleFields, { vehicleBody, type VehicleForm } from '$lib/components/VehicleFields.svelte';
-	import { vinFromScan } from '$lib/format';
+	import { asVin } from '$lib/format';
 	import { parseReading } from '$lib/odometer';
 	import { t } from '$lib/i18n/index.svelte';
 	import { business } from '$lib/settings.svelte';
@@ -12,7 +12,7 @@
 
 	// Coming from a search that found nothing: reuse what was typed.
 	const typed = (page.url.searchParams.get('q') ?? '').trim();
-	const typedVin = vinFromScan(typed);
+	const typedVin = asVin(typed);
 
 	let form = $state<VehicleForm>({
 		plate: typedVin ? '' : typed,

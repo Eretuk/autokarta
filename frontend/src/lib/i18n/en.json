@@ -168,7 +168,6 @@
 		"title": "Vehicles",
 		"searchLabel": "Find a vehicle",
 		"searchPlaceholder": "Plate, VIN, frame no. or owner",
-		"scanVin": "Scan VIN",
 		"add": "Add vehicle",
 		"results": "Found",
 		"recent": "Recent vehicles",

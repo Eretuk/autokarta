@@ -8,7 +8,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import Plate from '$lib/components/Plate.svelte';
 	import ScanButton from '$lib/components/ScanButton.svelte';
-	import { formatDistance, vehicleName, vinFromScan } from '$lib/format';
+	import { formatDistance, vehicleName } from '$lib/format';
 	import { t } from '$lib/i18n/index.svelte';
 	import type { VehicleSummary } from '$lib/types';
 
@@ -67,9 +67,8 @@
 			enterkeyhint="search"
 		/>
 		<ScanButton
-			title={t('vehicles.scanVin')}
 			onScan={(d) => {
-				query = vinFromScan(d.text) ?? d.text;
+				query = d.text.trim();
 				onInput();
 			}}
 		/>

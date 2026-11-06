@@ -90,10 +90,10 @@ export function vehicleIdent(v: Identified): string {
 }
 
 /**
- * VIN stickers in Code 39 often prefix an "I" (import marker), and some
- * scanners add spaces. Returns a 17-character VIN when it looks like one.
+ * The 17-character VIN when the text looks like one (spaces and dashes
+ * ignored, an "I" import-marker prefix dropped), otherwise null.
  */
-export function vinFromScan(text: string): string | null {
+export function asVin(text: string): string | null {
 	let v = text.replace(/[\s-]/g, '').toUpperCase();
 	if (v.length === 18 && v.startsWith('I')) v = v.slice(1);
 	return /^[A-HJ-NPR-Z0-9]{17}$/.test(v) ? v : null;

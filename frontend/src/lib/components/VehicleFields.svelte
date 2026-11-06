@@ -35,9 +35,7 @@
 <script lang="ts">
 	// Identification and description fields of a vehicle. At least one of
 	// plate, VIN or frame number is required (checked by the server).
-	import { vinFromScan } from '$lib/format';
 	import { t } from '$lib/i18n/index.svelte';
-	import ScanButton from './ScanButton.svelte';
 
 	let { form = $bindable() }: { form: VehicleForm } = $props();
 
@@ -54,10 +52,9 @@
 		<input type="text" bind:value={form.plate} maxlength="16" autocomplete="off" autocapitalize="characters" spellcheck="false" />
 	</label>
 
-	<label class="field" for="vin">{t('vehicles.vin')}</label>
-	<div class="with-action field-gap">
+	<label class="field">
+		{t('vehicles.vin')}
 		<input
-			id="vin"
 			type="text"
 			class="mono"
 			bind:value={form.vin}
@@ -66,8 +63,7 @@
 			autocapitalize="characters"
 			spellcheck="false"
 		/>
-		<ScanButton title={t('vehicles.scanVin')} onScan={(d) => (form.vin = vinFromScan(d.text) ?? d.text)} />
-	</div>
+	</label>
 
 	<label class="field">
 		{t('vehicles.frameNumber')}
@@ -141,9 +137,6 @@
 		font-size: 1.25rem;
 		margin-bottom: 4px;
 		padding: 0;
-	}
-	label[for='vin'] {
-		margin-bottom: 6px;
 	}
 	.field-gap {
 		margin-bottom: 14px;
