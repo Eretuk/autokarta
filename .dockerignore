@@ -1,0 +1,10 @@
+.git
+.github
+.env
+.env.*
+backups
+backend/target
+frontend/node_modules
+frontend/build
+frontend/.svelte-kit
+**/.DS_Store
