@@ -1,0 +1,142 @@
+{
+	"common": {
+		"show": "Show",
+		"hide": "Hide",
+		"close": "Close",
+		"loading": "Loading…",
+		"saveChanges": "Save changes"
+	},
+	"nav": {
+		"main": "Main menu",
+		"home": "Home",
+		"scanner": "Scanner",
+		"staff": "Staff",
+		"account": "Account"
+	},
+	"login": {
+		"title": "Sign in",
+		"username": "Username",
+		"password": "Password",
+		"submit": "Sign in",
+		"signingIn": "Signing in…",
+		"forgot": "Forgot your password? Ask the owner to set a new one."
+	},
+	"home": {
+		"greeting": "Hello, {name}",
+		"soonTitle": "Vehicles and work orders are next",
+		"soonBody": "This is an early version. For now you can manage staff, change your settings and test the camera scanner.",
+		"tryScanner": "Test the scanner",
+		"manageStaff": "Manage staff"
+	},
+	"roles": {
+		"owner": "Owner",
+		"mechanic": "Mechanic"
+	},
+	"staff": {
+		"title": "Staff",
+		"activeCount": {
+			"one": "{count} active account",
+			"other": "{count} active accounts"
+		},
+		"add": "Add staff member",
+		"addTitle": "New staff member",
+		"addSubmit": "Create account",
+		"added": "Account for {name} created. Give them the username and password.",
+		"saved": "Changes for {name} saved.",
+		"displayName": "Name",
+		"username": "Username",
+		"usernameHint": "Used to sign in. 3–32 characters: Latin letters, digits, dot, dash, underscore.",
+		"role": "Role",
+		"roleHint": {
+			"owner": "Sees everything, including money, and manages staff.",
+			"mechanic": "Works with vehicles, work orders and parts. No financial data."
+		},
+		"initialPassword": "Password",
+		"initialPasswordHint": "At least 8 characters. They can change it later.",
+		"inactive": "Deactivated",
+		"since": "added {date}",
+		"selfHint": "You cannot change your own role or deactivate yourself.",
+		"resetPassword": "Set a new password",
+		"resetPasswordHint": "Use this if they forgot their password. They will be signed out on all devices.",
+		"setPassword": "Set password",
+		"passwordSet": "New password set. Give it to them in person.",
+		"deactivate": "Deactivate account",
+		"deactivateHint": "A deactivated person cannot sign in. Their work history stays.",
+		"deactivated": "{name} can no longer sign in.",
+		"activate": "Activate account",
+		"activated": "{name} can sign in again."
+	},
+	"account": {
+		"title": "Account",
+		"profile": "Profile",
+		"signedInAs": "Signed in as {username}",
+		"profileSaved": "Profile saved.",
+		"language": "Language",
+		"theme": "Appearance",
+		"themeHint": "Applies to this device only.",
+		"themes": {
+			"system": "Like the device",
+			"light": "Light",
+			"dark": "Dark"
+		},
+		"changePassword": "Change password",
+		"currentPassword": "Current password",
+		"newPassword": "New password",
+		"repeatPassword": "Repeat new password",
+		"passwordRule": "At least 8 characters.",
+		"passwordSignsOut": "Other devices where you are signed in will be signed out.",
+		"changePasswordSubmit": "Change password",
+		"passwordChanged": "Password changed. Other devices were signed out.",
+		"signOut": "Sign out"
+	},
+	"scanner": {
+		"title": "Scanner test",
+		"intro": "Point the camera at a barcode or QR code to check that scanning works on this phone.",
+		"start": "Turn on camera",
+		"starting": "Starting camera…",
+		"stop": "Turn off camera",
+		"engineNative": "Using the browser's built-in scanner",
+		"engineZxing": "Using the built-in fallback scanner",
+		"torchOn": "Light on",
+		"torchOff": "Light off",
+		"results": "Scanned codes",
+		"empty": "Nothing scanned yet.",
+		"errors": {
+			"insecure": "The camera only works over HTTPS. Open the app through its https:// address.",
+			"denied": "Camera access is blocked. Allow the camera for this site in the browser settings, then try again.",
+			"noCamera": "No camera found on this device.",
+			"generic": "Could not start the camera. Close other apps that use it and try again.",
+			"engine": "The scanner could not start in this browser. Try the latest Chrome or Safari."
+		}
+	},
+	"notFound": {
+		"title": "Page not found",
+		"body": "The link may be outdated.",
+		"home": "Go to home page"
+	},
+	"errors": {
+		"unknown": "Something went wrong. Try again.",
+		"network_error": "No connection to the server. Check the internet and try again.",
+		"server_unavailable": "The server is not responding. Try again in a minute.",
+		"internal": "Server error. Try again; if it repeats, tell the owner.",
+		"unauthorized": "Your session has ended. Sign in again.",
+		"forbidden": "Only the owner can do this.",
+		"not_found": "Not found. It may have been removed.",
+		"invalid_credentials": "Wrong username or password.",
+		"too_many_attempts": "Too many failed attempts. Wait 15 minutes and try again.",
+		"too_many_attempts_wait": {
+			"one": "Too many failed attempts. Try again in {count} minute.",
+			"other": "Too many failed attempts. Try again in {count} minutes."
+		},
+		"invalid_username": "Username must be 3–32 characters: Latin letters, digits, dot, dash or underscore.",
+		"password_too_short": "Password is too short. Use at least 8 characters.",
+		"password_too_long": "Password is too long. Use at most 256 characters.",
+		"invalid_display_name": "Enter a name (up to 80 characters).",
+		"invalid_locale": "Choose a language from the list.",
+		"invalid_role": "Choose a role from the list.",
+		"username_taken": "This username is already taken. Choose another one.",
+		"cannot_demote_self": "You cannot change your own role or deactivate yourself.",
+		"wrong_current_password": "Current password is wrong.",
+		"passwords_do_not_match": "The new passwords do not match."
+	}
+}

@@ -1,0 +1,271 @@
+/* Visual direction: a vehicle registration document. Pale green-grey paper,
+   dark ink, stamp-blue accent. Everything else stays quiet. */
+
+:root {
+	--paper: #e4eae3;
+	--surface: #f3f6f1;
+	--surface-2: #dbe3da;
+	--ink: #16201a;
+	--ink-muted: #4a5a50;
+	--line: #b3c0b6;
+	--line-strong: #7d8f83;
+	--accent: #1f4e9c;
+	--accent-hover: #183f80;
+	--accent-ink: #ffffff;
+	--accent-soft: #d6e1f3;
+	--danger: #a0261b;
+	--danger-soft: #f6dcd8;
+	--ok: #24603a;
+	--ok-soft: #d5eadb;
+	--plate: #ffffff;
+	--plate-ink: #111111;
+	--focus: #1f4e9c;
+
+	--font-body: 'Barlow', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--font-head: 'Barlow Condensed', 'Roboto Condensed', 'Arial Narrow', system-ui, sans-serif;
+
+	--radius: 6px;
+	--tap: 48px;
+	--gutter: 16px;
+	--nav-h: 64px;
+
+	color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--paper: #111714;
+		--surface: #19211d;
+		--surface-2: #222c27;
+		--ink: #e3eae4;
+		--ink-muted: #9db0a4;
+		--line: #34423a;
+		--line-strong: #56685d;
+		--accent: #82a8ec;
+		--accent-hover: #a2bff2;
+		--accent-ink: #0b1424;
+		--accent-soft: #1f2d45;
+		--danger: #ff9184;
+		--danger-soft: #3d1f1b;
+		--ok: #82d19b;
+		--ok-soft: #1b3324;
+		--plate: #e9ece9;
+		--focus: #a2bff2;
+		color-scheme: dark;
+	}
+}
+
+:root[data-theme='dark'] {
+	--paper: #111714;
+	--surface: #19211d;
+	--surface-2: #222c27;
+	--ink: #e3eae4;
+	--ink-muted: #9db0a4;
+	--line: #34423a;
+	--line-strong: #56685d;
+	--accent: #82a8ec;
+	--accent-hover: #a2bff2;
+	--accent-ink: #0b1424;
+	--accent-soft: #1f2d45;
+	--danger: #ff9184;
+	--danger-soft: #3d1f1b;
+	--ok: #82d19b;
+	--ok-soft: #1b3324;
+	--plate: #e9ece9;
+	--focus: #a2bff2;
+	color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	-webkit-text-size-adjust: 100%;
+	-webkit-tap-highlight-color: transparent;
+}
+
+body {
+	margin: 0;
+	min-height: 100dvh;
+	background: var(--paper);
+	color: var(--ink);
+	font-family: var(--font-body);
+	font-size: 17px;
+	line-height: 1.45;
+}
+
+h1,
+h2,
+h3 {
+	font-family: var(--font-head);
+	font-weight: 700;
+	line-height: 1.1;
+	margin: 0 0 0.5em;
+	letter-spacing: 0.01em;
+}
+h1 {
+	font-size: 1.9rem;
+}
+h2 {
+	font-size: 1.35rem;
+}
+
+p {
+	margin: 0 0 0.75em;
+}
+
+a {
+	color: var(--accent);
+}
+
+:focus-visible {
+	outline: 3px solid var(--focus);
+	outline-offset: 2px;
+}
+
+/* ---------- forms ---------- */
+
+label.field {
+	display: grid;
+	gap: 6px;
+	margin-bottom: 14px;
+	font-weight: 500;
+}
+
+.hint {
+	color: var(--ink-muted);
+	font-size: 0.92rem;
+	font-weight: 400;
+}
+
+input[type='text'],
+input[type='password'],
+select {
+	width: 100%;
+	min-height: var(--tap);
+	padding: 10px 12px;
+	font: inherit;
+	color: var(--ink);
+	background: var(--surface);
+	border: 2px solid var(--line-strong);
+	border-radius: var(--radius);
+}
+input:focus,
+select:focus {
+	border-color: var(--accent);
+	outline: none;
+	box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	min-height: var(--tap);
+	padding: 10px 18px;
+	font: inherit;
+	font-weight: 600;
+	color: var(--ink);
+	background: var(--surface);
+	border: 2px solid var(--line-strong);
+	border-radius: var(--radius);
+	cursor: pointer;
+	text-decoration: none;
+	touch-action: manipulation;
+}
+.btn:hover {
+	border-color: var(--ink-muted);
+}
+.btn:disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+.btn.primary {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--accent-ink);
+}
+.btn.primary:hover:not(:disabled) {
+	background: var(--accent-hover);
+	border-color: var(--accent-hover);
+}
+.btn.danger {
+	color: var(--danger);
+	border-color: var(--danger);
+}
+.btn.block {
+	width: 100%;
+}
+
+/* Segmented choice (role, language, theme). */
+.segmented {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.segmented button {
+	flex: 1 1 0;
+	min-width: 6.5rem;
+}
+.segmented button[aria-pressed='true'] {
+	background: var(--accent-soft);
+	border-color: var(--accent);
+	color: var(--ink);
+}
+
+/* ---------- messages ---------- */
+
+.notice {
+	padding: 12px 14px;
+	border-radius: var(--radius);
+	border-left: 5px solid;
+	margin-bottom: 14px;
+}
+.notice.error {
+	background: var(--danger-soft);
+	border-color: var(--danger);
+}
+.notice.ok {
+	background: var(--ok-soft);
+	border-color: var(--ok);
+}
+
+/* ---------- layout pieces ---------- */
+
+.card {
+	background: var(--surface);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	padding: 18px var(--gutter);
+	margin-bottom: 16px;
+}
+
+.badge {
+	display: inline-block;
+	padding: 1px 8px;
+	border-radius: 999px;
+	border: 1px solid var(--line-strong);
+	font-size: 0.85rem;
+	font-weight: 600;
+	white-space: nowrap;
+}
+.badge.accent {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+.badge.muted {
+	color: var(--ink-muted);
+}
+
+.visually-hidden {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+}

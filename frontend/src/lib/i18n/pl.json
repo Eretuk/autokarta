@@ -1,0 +1,146 @@
+{
+	"common": {
+		"show": "Pokaż",
+		"hide": "Ukryj",
+		"close": "Zamknij",
+		"loading": "Wczytywanie…",
+		"saveChanges": "Zapisz zmiany"
+	},
+	"nav": {
+		"main": "Menu główne",
+		"home": "Start",
+		"scanner": "Skaner",
+		"staff": "Pracownicy",
+		"account": "Konto"
+	},
+	"login": {
+		"title": "Logowanie",
+		"username": "Login",
+		"password": "Hasło",
+		"submit": "Zaloguj się",
+		"signingIn": "Logowanie…",
+		"forgot": "Nie pamiętasz hasła? Poproś właściciela o ustawienie nowego."
+	},
+	"home": {
+		"greeting": "Dzień dobry, {name}",
+		"soonTitle": "Następne będą pojazdy i zlecenia",
+		"soonBody": "To wczesna wersja. Na razie możesz zarządzać pracownikami, zmieniać ustawienia i przetestować skaner w aparacie.",
+		"tryScanner": "Przetestuj skaner",
+		"manageStaff": "Pracownicy"
+	},
+	"roles": {
+		"owner": "Właściciel",
+		"mechanic": "Mechanik"
+	},
+	"staff": {
+		"title": "Pracownicy",
+		"activeCount": {
+			"one": "{count} aktywne konto",
+			"few": "{count} aktywne konta",
+			"many": "{count} aktywnych kont",
+			"other": "{count} aktywnego konta"
+		},
+		"add": "Dodaj pracownika",
+		"addTitle": "Nowy pracownik",
+		"addSubmit": "Utwórz konto",
+		"added": "Konto dla: {name} utworzone. Przekaż login i hasło.",
+		"saved": "Zmiany dla: {name} zapisane.",
+		"displayName": "Imię",
+		"username": "Login",
+		"usernameHint": "Do logowania. 3–32 znaki: litery łacińskie, cyfry, kropka, myślnik, podkreślnik.",
+		"role": "Rola",
+		"roleHint": {
+			"owner": "Widzi wszystko, także finanse, i zarządza pracownikami.",
+			"mechanic": "Pracuje z pojazdami, zleceniami i częściami. Bez danych finansowych."
+		},
+		"initialPassword": "Hasło",
+		"initialPasswordHint": "Co najmniej 8 znaków. Pracownik może je później zmienić.",
+		"inactive": "Wyłączone",
+		"since": "dodano {date}",
+		"selfHint": "Nie możesz zmienić własnej roli ani wyłączyć swojego konta.",
+		"resetPassword": "Ustaw nowe hasło",
+		"resetPasswordHint": "Gdy pracownik zapomniał hasła. Zostanie wylogowany na wszystkich urządzeniach.",
+		"setPassword": "Ustaw hasło",
+		"passwordSet": "Nowe hasło ustawione. Przekaż je osobiście.",
+		"deactivate": "Wyłącz konto",
+		"deactivateHint": "Osoba z wyłączonym kontem nie może się zalogować. Historia jej prac zostaje.",
+		"deactivated": "{name}: logowanie zablokowane.",
+		"activate": "Włącz konto",
+		"activated": "{name}: logowanie znów możliwe."
+	},
+	"account": {
+		"title": "Konto",
+		"profile": "Profil",
+		"signedInAs": "Zalogowano jako {username}",
+		"profileSaved": "Profil zapisany.",
+		"language": "Język",
+		"theme": "Wygląd",
+		"themeHint": "Dotyczy tylko tego urządzenia.",
+		"themes": {
+			"system": "Jak w systemie",
+			"light": "Jasny",
+			"dark": "Ciemny"
+		},
+		"changePassword": "Zmiana hasła",
+		"currentPassword": "Obecne hasło",
+		"newPassword": "Nowe hasło",
+		"repeatPassword": "Powtórz nowe hasło",
+		"passwordRule": "Co najmniej 8 znaków.",
+		"passwordSignsOut": "Na innych urządzeniach nastąpi wylogowanie.",
+		"changePasswordSubmit": "Zmień hasło",
+		"passwordChanged": "Hasło zmienione. Inne urządzenia zostały wylogowane.",
+		"signOut": "Wyloguj się"
+	},
+	"scanner": {
+		"title": "Test skanera",
+		"intro": "Skieruj aparat na kod kreskowy lub kod QR, aby sprawdzić, czy skanowanie działa na tym telefonie.",
+		"start": "Włącz aparat",
+		"starting": "Włączanie aparatu…",
+		"stop": "Wyłącz aparat",
+		"engineNative": "Wbudowany skaner przeglądarki",
+		"engineZxing": "Zapasowy skaner aplikacji",
+		"torchOn": "Włącz latarkę",
+		"torchOff": "Wyłącz latarkę",
+		"results": "Zeskanowane kody",
+		"empty": "Nic jeszcze nie zeskanowano.",
+		"errors": {
+			"insecure": "Aparat działa tylko przez HTTPS. Otwórz aplikację pod adresem https://.",
+			"denied": "Dostęp do aparatu jest zablokowany. Zezwól na aparat dla tej strony w ustawieniach przeglądarki i spróbuj ponownie.",
+			"noCamera": "Na tym urządzeniu nie znaleziono aparatu.",
+			"generic": "Nie udało się włączyć aparatu. Zamknij inne aplikacje, które go używają, i spróbuj ponownie.",
+			"engine": "Skaner nie uruchomił się w tej przeglądarce. Spróbuj aktualnego Chrome lub Safari."
+		}
+	},
+	"notFound": {
+		"title": "Nie znaleziono strony",
+		"body": "Link mógł się zdezaktualizować.",
+		"home": "Przejdź do strony głównej"
+	},
+	"errors": {
+		"unknown": "Coś poszło nie tak. Spróbuj ponownie.",
+		"network_error": "Brak połączenia z serwerem. Sprawdź internet i spróbuj ponownie.",
+		"server_unavailable": "Serwer nie odpowiada. Spróbuj za minutę.",
+		"internal": "Błąd serwera. Spróbuj ponownie; jeśli się powtórzy, powiadom właściciela.",
+		"unauthorized": "Sesja wygasła. Zaloguj się ponownie.",
+		"forbidden": "Tylko właściciel może to zrobić.",
+		"not_found": "Nie znaleziono. Możliwe, że zostało usunięte.",
+		"invalid_credentials": "Nieprawidłowy login lub hasło.",
+		"too_many_attempts": "Zbyt wiele nieudanych prób. Odczekaj 15 minut.",
+		"too_many_attempts_wait": {
+			"one": "Zbyt wiele nieudanych prób. Spróbuj za {count} minutę.",
+			"few": "Zbyt wiele nieudanych prób. Spróbuj za {count} minuty.",
+			"many": "Zbyt wiele nieudanych prób. Spróbuj za {count} minut.",
+			"other": "Zbyt wiele nieudanych prób. Spróbuj za {count} minuty."
+		},
+		"invalid_username": "Login: 3–32 znaki, litery łacińskie, cyfry, kropka, myślnik lub podkreślnik.",
+		"password_too_short": "Hasło jest za krótkie. Użyj co najmniej 8 znaków.",
+		"password_too_long": "Hasło jest za długie. Maksymalnie 256 znaków.",
+		"invalid_display_name": "Wpisz imię (do 80 znaków).",
+		"invalid_locale": "Wybierz język z listy.",
+		"invalid_role": "Wybierz rolę z listy.",
+		"username_taken": "Ten login jest już zajęty. Wybierz inny.",
+		"cannot_demote_self": "Nie możesz zmienić własnej roli ani wyłączyć swojego konta.",
+		"wrong_current_password": "Obecne hasło jest nieprawidłowe.",
+		"passwords_do_not_match": "Nowe hasła się nie zgadzają."
+	}
+}
