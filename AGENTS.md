@@ -1,0 +1,253 @@
+# AGENTS.md: project context for AI assistants
+
+Read this file fully before making changes. It describes what Autokarta is,
+decisions already made, and conventions to follow. If a task conflicts with
+something here, ask the human first instead of silently changing direction.
+
+## 1. Product
+
+**Autokarta** is a self-hosted web app (installable PWA) for a small auto
+service that also rents out cars (taxi and regular rental) and sells cars.
+
+The first real user (beta tester) is one auto service owner. Today he keeps
+everything in a paper notebook or in his head, under a heavy flow of
+customers. Paid products he tried were overloaded with features. **Speed and
+simplicity of data entry from a phone are the top priority**: if recording a
+job takes longer than writing it in the notebook, the app has failed.
+
+Problems to solve:
+- No history per car: what was installed or replaced, when, at what mileage.
+- No idea what spare parts are in stock and what is missing.
+- Rental/taxi fleet maintenance is tracked from memory.
+- Cars for sale have no documented history.
+- Customers should be able to see what was done on their car.
+
+### Users and roles
+- **owner**: sees everything (prices, purchase costs, rentals, revenue), manages staff.
+- **mechanic**: vehicles, work orders, parts stock. No financial overview, no staff management.
+- **customer**: never logs in. Gets a private share link per vehicle from the owner.
+- No public sign-up. The first owner is created with a CLI command; owners create other accounts.
+
+## 2. Domain model (planned)
+
+The **vehicle** is the center of the model.
+
+- `vehicles`: internal UUID primary key. **VIN is NOT the primary key**: many
+  right-hand-drive Japanese cars have only a frame (chassis) number, typos
+  happen and must be correctable, plates change. Store `vin` and
+  `frame_number` as nullable, unique when present. Search works by VIN, frame
+  number or plate. A vehicle has a role: `customer`, `fleet` (own rental/taxi),
+  `for_sale`. Roles can change over time (a fleet car gets sold).
+- `odometer_readings`: mileage history with date. Used for reminders and an honest history.
+- `clients`: customers and rental drivers.
+- `work_orders` + `work_order_items`: vehicle, mileage, date, status; items are labour or parts.
+- `parts`: catalogue with part number (OEM/article) as the main identifier,
+  brand, **multiple barcodes** (same part may have different barcodes from
+  different suppliers; many parts have none), minimum stock level.
+- `stock_movements`: ledger of receipts, consumption into work orders and
+  inventory adjustments. **Stock level is the sum of movements, never a
+  stored counter.** Add a materialized view only if it ever gets slow.
+- Own QR labels for shelves/bins and for parts without barcodes.
+- `rentals` + `rental_payments`: contract (taxi or regular), driver, period, rate, payments.
+- `sale_listings`: price, description, photos, status.
+- `maintenance_rules`: "every N km or M months, whichever comes first".
+  System templates (oil, timing belt, brakes, insurance, inspection) have a
+  `code` translated in the UI; user-created rules are plain text. For taxi
+  cars predict the due date from average daily mileage.
+- `vehicle_share_links`: random 32-byte token (base64url), can be revoked and
+  regenerated (e.g. when a car is sold).
+
+### Public share page rules
+Shows work history and mileage of the vehicle. Does **not** show names or
+phone numbers of current or previous owners, and by default no prices. The
+history belongs to the car; personal data of past owners must never leak.
+
+## 3. Tech stack
+
+### Backend (`backend/`): done, tested
+- Rust 2021, **axum 0.8**, tokio, **sqlx 0.8** (PostgreSQL), argon2 0.5,
+  axum-extra 0.10 (cookies), tower-http 0.6, clap 4, thiserror 2, time, uuid.
+- Single binary. Migrations embedded via `sqlx::migrate!` and run on startup.
+- Queries currently use runtime `sqlx::query_as` (no `DATABASE_URL` needed to
+  compile). Switching to compile-time `query!` macros with `cargo sqlx prepare`
+  and a committed `.sqlx/` directory is welcome later.
+- Newer major versions of some crates exist (sqlx 0.9, tower-http 0.7,
+  argon2 0.6). Upgrade deliberately in a separate change, not as a side effect.
+
+### Frontend (`frontend/`): skeleton done
+Stack (as scaffolded, exact versions pinned in `package.json`):
+- **SvelteKit 2 + Svelte 5 (runes)**, TypeScript, `adapter-static` in SPA mode
+  (`fallback: 'index.html'`, root `+layout.ts` with `export const ssr = false`).
+  The built files are served by the Rust binary (`STATIC_DIR`), so production
+  is one app container plus PostgreSQL.
+- Pinned known-good majors: `@sveltejs/kit` 2.x, `vite` 7.x, `typescript` 5.x,
+  `@sveltejs/adapter-static` 3.x, `@vite-pwa/sveltekit` 1.x (options
+  `kit: { adapterFallback: 'index.html', spa: true }`). SvelteKit 3, Vite 8 and
+  TypeScript 7 exist; do not jump majors without being asked.
+- Vite dev server proxies `/api` to `http://localhost:8080`.
+- **PWA** via `@vite-pwa/sveltekit`; register the service worker with
+  `virtual:pwa-register`, exclude `/api/` from navigation fallback.
+- **Barcode scanning**: native `BarcodeDetector` where available (Chrome on
+  Android); fallback to `zxing-wasm` (`zxing-wasm/reader`). zxing-wasm loads
+  its `.wasm` from the jsDelivr CDN by default: **self-host it** by importing
+  `zxing-wasm/reader/zxing_reader.wasm?url` and passing it via
+  `prepareZXingModule({ overrides: { locateFile } })`. Camera access requires
+  HTTPS (localhost is fine in development).
+- Fonts self-hosted via `@fontsource/barlow` and `@fontsource/barlow-condensed`
+  (no Google Fonts requests, works offline). **Barlow has no Cyrillic**: the
+  Russian UI falls back to the system font. Open question for the author.
+
+### Database
+PostgreSQL 17 (dev: `docker-compose.dev.yml`). Daily `pg_dump` backups with
+rotation plus an off-site copy are a hard requirement before real data goes in.
+
+## 4. What exists now
+
+`backend/` implements:
+- `autokarta create-admin --username <name>`: prompts for password, creates an owner.
+- `autokarta` / `autokarta serve`: HTTP server.
+- Migration `users` + `sessions` (`backend/migrations/`).
+- Session auth: 256-bit random token in an HttpOnly, SameSite=Lax cookie
+  `autokarta_session`; DB stores only its SHA-256 hash. `COOKIE_SECURE=false`
+  only for local HTTP development.
+- Login rate limiter: 5 failures per username, then 15 minutes lockout (in memory).
+- Constant-time-ish login: unknown usernames still run an Argon2 verification.
+- Extractors: `CurrentUser` (any staff) and `Owner` (owners only).
+
+API (all JSON, prefix `/api`):
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/health` | anyone | checks DB |
+| POST | `/auth/login` | anyone | `{username, password}`; username is case-insensitive |
+| POST | `/auth/logout` | staff | |
+| GET | `/auth/me` | staff | current user |
+| PATCH | `/auth/me` | staff | `{display_name?, locale?}` |
+| POST | `/auth/password` | staff | `{current_password, new_password}`; signs out other devices |
+| GET | `/users` | owner | list staff |
+| POST | `/users` | owner | `{username, display_name, role, password, locale?}` |
+| PATCH | `/users/{id}` | owner | `{display_name?, role?, is_active?}`; cannot demote/deactivate self |
+| POST | `/users/{id}/password` | owner | `{password}`; signs the user out everywhere |
+
+All endpoints were tested manually against PostgreSQL (login, roles, 403 for
+mechanics, duplicate username 409, validation 422, rate limit 429, logout,
+password change keeping the current session).
+
+`frontend/` implements (roadmap step 1): login, app shell (bottom tab bar on
+phones, header nav on wide screens), staff management (owner only), account
+page (name, language saved to profile, per-device theme, password change,
+sign out), camera scanner test page (`/scanner`), PWA manifest + service
+worker, en/pl/ru. The backend sets `Cache-Control`: `immutable` for
+`/_app/immutable/*`, `no-cache` for other static files.
+
+Deployment: `Dockerfile` (node build + cargo-chef + debian-slim, non-root),
+`docker-compose.yml` (db, app, backup, caddy), `deploy/Caddyfile`,
+`deploy/backup.sh` (daily `pg_dump` into `./backups` with rotation). **Off-site
+backup copy is not automated yet.** CI: `.github/workflows/ci.yml`.
+
+## 5. Roadmap (in order)
+
+1. Frontend skeleton: login, app shell, staff management, account page
+   (change password, language), camera scanner test page. Production
+   `Dockerfile` (multi-stage, cargo-chef), `docker-compose.yml` with app,
+   PostgreSQL, backup service and Caddy (automatic HTTPS), CI workflow.
+2. Vehicles, odometer readings, work orders.
+3. Parts stock with scanning, consumption into work orders, low-stock list.
+4. Public share link page.
+5. Maintenance reminders: background task in the same binary + Telegram bot.
+6. Rentals and payments, then cars for sale.
+
+After step 3 the beta tester uses it for 1–2 weeks; his feedback reshapes the rest.
+Offline mode is explicitly **out of scope** for the first versions.
+
+## 6. Conventions
+
+### API and errors
+- Errors are JSON `{"error": "<code>"}` with snake_case codes
+  (`invalid_credentials`, `username_taken`, `password_too_short`, ...).
+  The backend never returns human-readable text; the frontend translates codes.
+- Status codes: 401 unauthenticated / bad credentials, 403 wrong role,
+  404, 409 conflict, 422 validation, 429 rate limited (with `Retry-After`).
+- Validation lives in `backend/src/validate.rs` and returns error codes.
+- New error kinds go into `AppError` in `backend/src/error.rs`.
+
+### Database
+- Migrations: `backend/migrations/YYYYMMDDHHMMSS_description.sql`, never edit
+  a migration that has been committed; add a new one.
+- UUID primary keys (`gen_random_uuid()`), `TIMESTAMPTZ`, `created_at`/`updated_at`.
+- Money: integer minor units (`BIGINT`, e.g. grosze/kopecks) plus currency
+  from business settings. Never floats.
+- Destructive or multi-step writes go in a transaction.
+
+### Internationalization
+- Languages: English (base), Polish, Russian. **No hardcoded UI strings**, even
+  while only English exists. Every string goes through the i18n layer.
+- Frontend: **decided: own small typed module** `frontend/src/lib/i18n/`
+  (no Paraglide). `en.json` is the source of truth; `MessageKey` is derived
+  from it, so `t('typo')` fails `npm run check`. `pl.json`/`ru.json` may miss
+  keys (English fallback). Plurals are objects `{one, few, many, other}`
+  picked by `Intl.PluralRules`; `{count}` is number-formatted. Server error
+  codes map to `errors.<code>`. Keep the three files' key sets identical.
+- **Plurals**: Polish and Russian have three forms with different rules
+  (RU "21 деталь" vs PL "21 części"). Always use `Intl.PluralRules` /
+  library plural support, never `count + " items"`.
+- Dates and numbers via `Intl.DateTimeFormat` / `Intl.NumberFormat`.
+- **Currency and distance units (km/mi) are business settings, not tied to
+  the UI language.**
+- Polish and Russian text is 20–30% longer than English: design with room.
+- Backend text (Telegram, share page) later via Fluent (`fluent-templates`).
+- User-entered data (part names, job descriptions) is never translated.
+- Each user has `locale` in the profile; clients will get a locale field for
+  notifications; the public page uses `Accept-Language` plus a switcher.
+
+### UI and design
+- Mobile first. Mechanics use phones with dirty hands, in a noisy workshop,
+  sometimes in sunlight: large touch targets (min 48px), high contrast,
+  short forms, the most common action reachable in one tap.
+- Light and dark themes via CSS custom properties.
+- Visual direction: vehicle registration document (pale green-grey paper,
+  dark ink, stamp blue accent); typefaces Barlow (body) and Barlow Condensed
+  (headings, wordmark). One memorable element: the wordmark styled with a
+  blue strip like a European number plate. Keep everything else quiet.
+- Copy: plain verbs, sentence case, buttons say what happens ("Save changes",
+  "Add part"), errors explain what to do next.
+
+### Code style
+- Rust: `cargo fmt`, `cargo clippy -- -D warnings`, unit tests for pure logic.
+- Keep handlers thin; shared logic in modules. Comments explain why, not what.
+- Commit messages in English, imperative mood.
+
+## 7. Licensing rules (important)
+
+- The project is **source-available** under PolyForm Small Business 1.0.0
+  (`LICENSE.md`, with a `Required Notice:` line that must be preserved).
+  See `LICENSING.md`. The author plans possible commercial licensing later.
+- **Only add dependencies under permissive licenses** (MIT, Apache-2.0,
+  BSD, ISC, Zlib, MPL-2.0 is acceptable as a library). **No GPL/AGPL/LGPL
+  code or dependencies**: they are incompatible with the license model.
+  Check the license before adding any crate or npm package.
+- Do not copy code from other projects unless its license is permissive and
+  attribution is kept.
+- External contributors sign `CLA.md` (enforced by `.github/workflows/cla.yml`).
+
+## 8. Security and data rules
+
+- Never commit `.env`, secrets, database dumps or **any real customer data**
+  (names, phones, VINs of real clients). Use invented demo data.
+- Passwords: Argon2 only. Tokens: store hashes, never plaintext.
+- Share-link pages must not expose personal data (see section 2).
+- No third-party CDNs or trackers at runtime: everything self-hosted.
+
+## 9. Local development
+
+```bash
+cp .env.example .env
+docker compose -f docker-compose.dev.yml up -d
+cd backend
+cargo run -- create-admin --username owner
+cargo run                      # http://localhost:8080/api/health
+cargo test
+```
+Frontend: `cd frontend && npm install && npm run dev` (http://localhost:5173,
+proxies `/api` to :8080). `npm run check` must pass with zero warnings.
+To serve the built app from the backend: `npm run build`, then `STATIC_DIR=../frontend/build`.
