@@ -3,6 +3,9 @@
 export type DistanceUnit = 'km' | 'mi';
 export type VehicleRole = 'customer' | 'fleet' | 'for_sale';
 export type WorkOrderStatus = 'open' | 'done' | 'cancelled';
+export type PartUnit = 'pcs' | 'l' | 'kg' | 'm';
+export type PartCondition = 'new' | 'used';
+export type MovementKind = 'receipt' | 'consumption' | 'adjustment';
 
 export interface Client {
 	id: string;
@@ -74,9 +77,14 @@ export interface VehicleDetail {
 
 export interface WorkOrderItem {
 	id: string;
-	kind: 'labour';
+	kind: 'labour' | 'part';
 	description: string;
 	quantity_milli: number;
+	part_id?: string;
+	part_number?: string;
+	brand?: string;
+	condition?: PartCondition;
+	unit?: PartUnit;
 	unit_price_minor?: number;
 	line_total_minor?: number;
 }
@@ -124,4 +132,47 @@ export interface WorkOrderListRow {
 export interface BusinessSettings {
 	currency: string;
 	distance_unit: DistanceUnit;
+}
+
+export interface PartSummary {
+	id: string;
+	name: string;
+	brand: string | null;
+	part_number: string | null;
+	condition: PartCondition;
+	unit: PartUnit;
+	location: string | null;
+	stock_milli: number;
+	min_stock_milli: number;
+	sell_price_minor?: number | null;
+	/** The search text is exactly one of this part's barcodes. */
+	barcode_match: boolean;
+}
+
+export interface StockMovement {
+	id: string;
+	kind: MovementKind;
+	quantity_milli: number;
+	unit_cost_minor?: number;
+	note: string | null;
+	created_at: string;
+	created_by_name: string | null;
+	work_order_id: string | null;
+	work_order_number: number | null;
+}
+
+export interface PartDetail {
+	id: string;
+	name: string;
+	brand: string | null;
+	part_number: string | null;
+	condition: PartCondition;
+	unit: PartUnit;
+	location: string | null;
+	min_stock_milli: number;
+	sell_price_minor?: number | null;
+	note: string | null;
+	stock_milli: number;
+	barcodes: string[];
+	movements: StockMovement[];
 }

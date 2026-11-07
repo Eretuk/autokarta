@@ -5,7 +5,7 @@
 	import { api, errorMessage, safeNext } from '$lib/api';
 	import Wordmark from '$lib/components/Wordmark.svelte';
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
-	import { i18n, LOCALE_NAMES, LOCALES, setLocale, t } from '$lib/i18n/index.svelte';
+	import { i18n, LOCALE_NAMES, LOCALES, setLocale, t, type Locale } from '$lib/i18n/index.svelte';
 	import { loadSession, setUser, type User } from '$lib/session.svelte';
 
 	let username = $state('');
@@ -70,17 +70,14 @@
 		<p class="hint forgot">{t('login.forgot')}</p>
 	</form>
 
-	<nav class="langs" aria-label={t('account.language')}>
-		{#each LOCALES as loc (loc)}
-			<button
-				type="button"
-				class="lang"
-				aria-pressed={i18n.locale === loc}
-				lang={loc}
-				onclick={() => setLocale(loc)}>{LOCALE_NAMES[loc]}</button
-			>
-		{/each}
-	</nav>
+	<div class="lang">
+		<label class="visually-hidden" for="lang">{t('account.language')}</label>
+		<select id="lang" value={i18n.locale} onchange={(e) => setLocale(e.currentTarget.value as Locale)}>
+			{#each LOCALES as loc (loc)}
+				<option value={loc} lang={loc}>{LOCALE_NAMES[loc]}</option>
+			{/each}
+		</select>
+	</div>
 </main>
 
 <style>
@@ -106,25 +103,13 @@
 	.forgot {
 		margin: 14px 0 0;
 	}
-	.langs {
+	.lang {
 		display: flex;
 		justify-content: center;
-		gap: 4px;
 	}
-	.lang {
-		min-height: var(--tap);
-		padding: 0 14px;
-		font: inherit;
-		color: var(--ink-muted);
-		background: none;
-		border: none;
-		border-radius: var(--radius);
-		cursor: pointer;
-	}
-	.lang[aria-pressed='true'] {
-		color: var(--ink);
-		font-weight: 600;
-		text-decoration: underline;
-		text-underline-offset: 4px;
+	.lang select {
+		width: auto;
+		min-width: 200px;
+		text-align: center;
 	}
 </style>

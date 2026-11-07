@@ -12,6 +12,17 @@
 
 	let dialog: HTMLDialogElement;
 
+	// Closing on a backdrop tap must not fire when a finger went down inside
+	// the sheet and came up outside (selecting text in a field, the page
+	// shifting as the keyboard opens): the browser reports that click on the
+	// dialog itself. So both the press and the release must be outside.
+	let pressedOutside = false;
+	function isOutside(e: MouseEvent | PointerEvent) {
+		if (e.target !== dialog) return false;
+		const r = dialog.getBoundingClientRect();
+		return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+	}
+
 	$effect(() => {
 		if (open && !dialog.open) dialog.showModal();
 		else if (!open && dialog.open) dialog.close();
@@ -21,8 +32,10 @@
 <dialog
 	bind:this={dialog}
 	onclose={() => (open = false)}
+	onpointerdown={(e) => (pressedOutside = isOutside(e))}
 	onclick={(e) => {
-		if (e.target === dialog) open = false;
+		if (pressedOutside && isOutside(e)) open = false;
+		pressedOutside = false;
 	}}
 	aria-labelledby="sheet-title"
 >

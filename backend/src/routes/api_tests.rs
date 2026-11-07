@@ -402,3 +402,335 @@ async fn security_headers_do_not_depend_on_the_proxy(db: PgPool) {
     // Plain HTTP (cookie_secure = false): HSTS would pin localhost to HTTPS.
     assert!(h.get("strict-transport-security").is_none());
 }
+
+#[sqlx::test]
+async fn parts_catalogue_search_and_prices(db: PgPool) {
+    let api = Api::new(db).await;
+    let mech = api.login("mech").await;
+    let boss = api.login("boss").await;
+
+    let (st, _) = api
+        .call(
+            &mech,
+            "POST",
+            "/api/parts",
+            Some(json!({"name": "Oil filter", "sell_price_minor": 4500})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN, "mechanics cannot set prices");
+
+    let (st, filter) = api
+        .call(
+            &mech,
+            "POST",
+            "/api/parts",
+            Some(json!({
+                "name": "Oil filter", "brand": "Toyota", "part_number": "04152-yzza1",
+                "barcodes": ["4987654321098", "4987654321098"], "stock_milli": 3000,
+                "location": "A-3"
+            })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "{filter}");
+    assert_eq!(s(&filter["part_number"]), "04152-YZZA1");
+    assert_eq!(filter["barcodes"], json!(["4987654321098"]));
+    assert_eq!(filter["stock_milli"], 3000);
+    let fid = s(&filter["id"]).to_string();
+
+    // Same brand and number: the same part.
+    let (st, err) = api
+        .call(
+            &mech,
+            "POST",
+            "/api/parts",
+            Some(json!({"name": "Filter", "brand": "toyota", "part_number": "04152 YZZA1"})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CONFLICT);
+    assert_eq!(s(&err["error"]), "part_number_taken");
+
+    // A barcode belongs to one part.
+    let (_, other) = api
+        .call(
+            &mech,
+            "POST",
+            "/api/parts",
+            Some(json!({"name": "Bulb H7"})),
+        )
+        .await;
+    let barcodes = format!("/api/parts/{}/barcodes", s(&other["id"]));
+    let (st, err) = api
+        .call(
+            &mech,
+            "POST",
+            &barcodes,
+            Some(json!({"barcode": "4987654321098"})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CONFLICT);
+    assert_eq!(s(&err["error"]), "barcode_taken");
+
+    // Search ignores separators in part numbers; a scanned barcode is flagged.
+    let (_, found) = api
+        .call(&mech, "GET", "/api/parts?q=04152yzza1", None)
+        .await;
+    assert_eq!(s(&found[0]["id"]), fid);
+    let (_, found) = api
+        .call(&mech, "GET", "/api/parts?q=4987654321098", None)
+        .await;
+    assert_eq!(found.as_array().unwrap().len(), 1);
+    assert_eq!(found[0]["barcode_match"], true);
+
+    // Prices: owners set and see them, mechanics never receive them.
+    let part = format!("/api/parts/{fid}");
+    let (st, p) = api
+        .call(
+            &boss,
+            "PUT",
+            &part,
+            Some(
+                json!({"name": "Oil filter", "brand": "Toyota", "part_number": "04152-YZZA1",
+                        "location": "A-3", "min_stock_milli": 2000, "sell_price_minor": 4500}),
+            ),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{p}");
+    assert_eq!(p["sell_price_minor"], 4500);
+    // A mechanic editing the part leaves the price alone.
+    let (st, p) = api
+        .call(
+            &mech,
+            "PUT",
+            &part,
+            Some(
+                json!({"name": "Oil filter", "brand": "Toyota", "part_number": "04152-YZZA1",
+                        "location": "B-1", "min_stock_milli": 2000}),
+            ),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{p}");
+    assert!(p.get("sell_price_minor").is_none());
+    let (_, p) = api.call(&boss, "GET", &part, None).await;
+    assert_eq!(p["sell_price_minor"], 4500);
+    assert_eq!(s(&p["location"]), "B-1");
+    let (_, found) = api.call(&mech, "GET", "/api/parts?q=oil", None).await;
+    assert!(found[0].get("sell_price_minor").is_none());
+}
+
+#[sqlx::test]
+async fn stock_follows_work_orders(db: PgPool) {
+    let api = Api::new(db).await;
+    let mech = api.login("mech").await;
+    let boss = api.login("boss").await;
+
+    let (_, part) = api
+        .call(
+            &boss,
+            "POST",
+            "/api/parts",
+            Some(
+                json!({"name": "Engine oil 5W-30", "unit": "l", "min_stock_milli": 5000,
+                        "sell_price_minor": 3500, "stock_milli": 8000}),
+            ),
+        )
+        .await;
+    let pid = s(&part["id"]).to_string();
+    let part_url = format!("/api/parts/{pid}");
+    let stock = |p: &Value| p["stock_milli"].as_i64().unwrap();
+
+    let (_, v) = api
+        .call(
+            &mech,
+            "POST",
+            "/api/vehicles",
+            Some(json!({"plate": "TEST 1"})),
+        )
+        .await;
+    let (_, wo) = api
+        .call(
+            &mech,
+            "POST",
+            "/api/work-orders",
+            Some(json!({"vehicle_id": s(&v["id"])})),
+        )
+        .await;
+    let wo_url = format!("/api/work-orders/{}", s(&wo["id"]));
+    let items = format!("{wo_url}/items");
+
+    // A mechanic adds 4.5 l of oil: stock goes down, the catalogue price applies.
+    let (st, wo) = api
+        .call(
+            &mech,
+            "POST",
+            &items,
+            Some(json!({"part_id": pid, "quantity_milli": 4500})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "{wo}");
+    let item = &wo["items"][0];
+    assert_eq!(s(&item["kind"]), "part");
+    assert_eq!(s(&item["description"]), "Engine oil 5W-30");
+    assert_eq!(s(&item["unit"]), "l");
+    assert!(item.get("unit_price_minor").is_none());
+    let item_url = format!("{items}/{}", s(&item["id"]));
+    let (_, p) = api.call(&mech, "GET", &part_url, None).await;
+    assert_eq!(stock(&p), 3500);
+    assert_eq!(s(&p["movements"][0]["kind"]), "consumption");
+    assert_eq!(p["movements"][0]["work_order_number"], wo["number"]);
+    let (_, wo_boss) = api.call(&boss, "GET", &wo_url, None).await;
+    assert_eq!(wo_boss["items"][0]["unit_price_minor"], 3500);
+    assert_eq!(wo_boss["totals"]["total_minor"], 15750);
+
+    // Low stock list: 3.5 l is below the 5 l minimum.
+    let (_, low) = api.call(&mech, "GET", "/api/parts?filter=low", None).await;
+    assert_eq!(s(&low[0]["id"]), pid);
+
+    // Changing the quantity changes the consumption.
+    api.call(
+        &mech,
+        "PATCH",
+        &item_url,
+        Some(json!({"quantity_milli": 5000})),
+    )
+    .await;
+    let (_, p) = api.call(&mech, "GET", &part_url, None).await;
+    assert_eq!(stock(&p), 3000);
+
+    // Cancelling returns the parts; reopening takes them again.
+    api.call(
+        &mech,
+        "PATCH",
+        &wo_url,
+        Some(json!({"status": "cancelled"})),
+    )
+    .await;
+    let (_, p) = api.call(&mech, "GET", &part_url, None).await;
+    assert_eq!(stock(&p), 8000);
+    api.call(&mech, "PATCH", &wo_url, Some(json!({"status": "open"})))
+        .await;
+    let (_, p) = api.call(&mech, "GET", &part_url, None).await;
+    assert_eq!(stock(&p), 3000);
+
+    // Deleting the line returns the parts.
+    let (st, _) = api.call(&mech, "DELETE", &item_url, None).await;
+    assert_eq!(st, StatusCode::OK);
+    let (_, p) = api.call(&mech, "GET", &part_url, None).await;
+    assert_eq!(stock(&p), 8000);
+
+    // Deliveries: purchase cost is for owners only.
+    let movements = format!("{part_url}/movements");
+    let (st, _) = api
+        .call(
+            &mech,
+            "POST",
+            &movements,
+            Some(json!({"kind": "receipt", "quantity_milli": 4000, "unit_cost_minor": 2000})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, p) = api
+        .call(
+            &boss,
+            "POST",
+            &movements,
+            Some(json!({"kind": "receipt", "quantity_milli": 4000, "unit_cost_minor": 2000})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "{p}");
+    assert_eq!(stock(&p), 12000);
+    assert_eq!(p["movements"][0]["unit_cost_minor"], 2000);
+    let (_, p) = api.call(&mech, "GET", &part_url, None).await;
+    assert!(p["movements"][0].get("unit_cost_minor").is_none());
+
+    // A stock count records the difference.
+    let (_, p) = api
+        .call(
+            &mech,
+            "POST",
+            &movements,
+            Some(json!({"kind": "count", "quantity_milli": 11000})),
+        )
+        .await;
+    assert_eq!(stock(&p), 11000);
+    assert_eq!(s(&p["movements"][0]["kind"]), "adjustment");
+    assert_eq!(p["movements"][0]["quantity_milli"], -1000);
+
+    // A part used in a work order cannot be deleted.
+    api.call(&mech, "POST", &items, Some(json!({"part_id": pid})))
+        .await;
+    let (st, err) = api.call(&boss, "DELETE", &part_url, None).await;
+    assert_eq!(st, StatusCode::CONFLICT);
+    assert_eq!(s(&err["error"]), "part_in_use");
+}
+
+#[sqlx::test]
+async fn used_parts_are_separate_items(db: PgPool) {
+    let api = Api::new(db).await;
+    let mech = api.login("mech").await;
+    let new_part = json!({"name": "Alternator", "brand": "Denso", "part_number": "104210-3170"});
+
+    let (st, new) = api
+        .call(&mech, "POST", "/api/parts", Some(new_part.clone()))
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "{new}");
+    assert_eq!(s(&new["condition"]), "new");
+
+    // The same part number used: its own item with its own stock.
+    let mut used_part = new_part.clone();
+    used_part["condition"] = json!("used");
+    used_part["stock_milli"] = json!(1000);
+    let (st, used) = api
+        .call(&mech, "POST", "/api/parts", Some(used_part.clone()))
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "{used}");
+    assert_eq!(s(&used["condition"]), "used");
+    assert_ne!(used["id"], new["id"]);
+
+    // But not twice in the same condition.
+    let (st, err) = api.call(&mech, "POST", "/api/parts", Some(used_part)).await;
+    assert_eq!(st, StatusCode::CONFLICT);
+    assert_eq!(s(&err["error"]), "part_number_taken");
+
+    let (st, err) = api
+        .call(
+            &mech,
+            "POST",
+            "/api/parts",
+            Some(json!({"name": "X", "condition": "refurbished"})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(s(&err["error"]), "invalid_condition");
+
+    // Search finds both; a work order line says which one went in.
+    let (_, found) = api
+        .call(&mech, "GET", "/api/parts?q=1042103170", None)
+        .await;
+    assert_eq!(found.as_array().unwrap().len(), 2);
+
+    let (_, v) = api
+        .call(
+            &mech,
+            "POST",
+            "/api/vehicles",
+            Some(json!({"plate": "TEST 2"})),
+        )
+        .await;
+    let (_, wo) = api
+        .call(
+            &mech,
+            "POST",
+            "/api/work-orders",
+            Some(json!({"vehicle_id": s(&v["id"])})),
+        )
+        .await;
+    let (_, wo) = api
+        .call(
+            &mech,
+            "POST",
+            &format!("/api/work-orders/{}/items", s(&wo["id"])),
+            Some(json!({"part_id": s(&used["id"])})),
+        )
+        .await;
+    assert_eq!(s(&wo["items"][0]["condition"]), "used");
+}

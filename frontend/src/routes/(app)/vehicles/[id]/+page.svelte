@@ -131,6 +131,40 @@
 		}
 	}
 
+	// ----- client details -----
+	let clientOpen = $state(false);
+	let cName = $state('');
+	let cPhone = $state('');
+	let cNote = $state('');
+	let cError = $state('');
+	let cBusy = $state(false);
+
+	function openClient() {
+		if (!v.owner) return;
+		cName = v.owner.name;
+		cPhone = v.owner.phone ?? '';
+		cNote = v.owner.note ?? '';
+		cError = '';
+		clientOpen = true;
+	}
+
+	async function saveClient(e: SubmitEvent) {
+		e.preventDefault();
+		if (!v.owner) return;
+		cBusy = true;
+		cError = '';
+		try {
+			await api<Client>('PUT', `/clients/${v.owner.id}`, { name: cName, phone: cPhone, note: cNote });
+			// The name also appears in the owner history: reload the whole car.
+			v = await api<VehicleDetail>('GET', `/vehicles/${v.id}`);
+			clientOpen = false;
+		} catch (err) {
+			cError = errorMessage(err);
+		} finally {
+			cBusy = false;
+		}
+	}
+
 	// ----- odometer -----
 	let odoOpen = $state(false);
 	let odoValue = $state('');
@@ -232,6 +266,7 @@
 		<p class="hint">{t('vehicles.noOwner')}</p>
 	{/if}
 	<div class="actions">
+		{#if v.owner}<button class="btn" type="button" onclick={openClient}>{t('clients.edit')}</button>{/if}
 		<button class="btn" type="button" onclick={openOwner}>{v.owner ? t('vehicles.changeOwner') : t('vehicles.setOwner')}</button>
 	</div>
 	{#if pastOwners.length}
@@ -316,6 +351,26 @@
 			<textarea bind:value={woComplaint} maxlength="2000"></textarea>
 		</label>
 		<button class="btn primary block" type="submit" disabled={woBusy}>{t('workOrders.create')}</button>
+	</form>
+</Sheet>
+
+<Sheet bind:open={clientOpen} title={t('clients.edit')}>
+	<form onsubmit={saveClient}>
+		{#if cError}<div class="notice error" role="alert">{cError}</div>{/if}
+		<p class="hint">{t('clients.editHint')}</p>
+		<label class="field">
+			{t('clients.name')}
+			<input type="text" bind:value={cName} maxlength="120" required autocomplete="off" />
+		</label>
+		<label class="field">
+			{t('clients.phone')}
+			<input type="tel" bind:value={cPhone} maxlength="32" autocomplete="off" />
+		</label>
+		<label class="field">
+			{t('clients.note')}
+			<textarea bind:value={cNote} maxlength="2000"></textarea>
+		</label>
+		<button class="btn primary block" type="submit" disabled={cBusy || !cName.trim()}>{t('common.saveChanges')}</button>
 	</form>
 </Sheet>
 

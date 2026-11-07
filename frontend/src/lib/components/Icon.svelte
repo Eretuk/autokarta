@@ -1,6 +1,6 @@
 <script lang="ts" module>
 	// A handful of stroke icons drawn for this app (no icon font, no CDN).
-	export type IconName = 'home' | 'scan' | 'staff' | 'account' | 'car' | 'orders' | 'plus';
+	export type IconName = 'home' | 'scan' | 'staff' | 'account' | 'car' | 'orders' | 'plus' | 'box';
 </script>
 
 <script lang="ts">
@@ -21,6 +21,8 @@
 	{:else if name === 'orders'}
 		<rect x="5" y="4" width="14" height="17" rx="1.5" /><path d="M9 4V2.8h6V4" />
 		<path d="M8.5 10h7M8.5 14h7M8.5 18h4" />
+	{:else if name === 'box'}
+		<path d="M3.5 7.5L12 3l8.5 4.5v9L12 21l-8.5-4.5z" /><path d="M3.5 7.5L12 12l8.5-4.5M12 12v9" />
 	{:else if name === 'plus'}
 		<path d="M12 5v14M5 12h14" />
 	{:else if name === 'account'}

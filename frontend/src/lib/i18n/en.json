@@ -14,7 +14,8 @@
 		"staff": "Staff",
 		"account": "Account",
 		"vehicles": "Vehicles",
-		"orders": "Orders"
+		"orders": "Orders",
+		"parts": "Parts"
 	},
 	"login": {
 		"title": "Sign in",
@@ -158,11 +159,26 @@
 		"unknown_client": "This client no longer exists. Pick another one.",
 		"owner_change_before_start": "The date is before the current owner got the car.",
 		"reading_belongs_to_work_order": "This reading belongs to a work order. Change it there.",
-		"invalid_description": "Describe the work."
+		"invalid_description": "Describe the work.",
+		"invalid_part_name": "Enter the part name.",
+		"invalid_part_number": "Part number: up to 40 letters, digits, spaces, dashes, dots or slashes.",
+		"invalid_unit": "Choose a unit from the list.",
+		"invalid_barcode": "This code cannot be used. Scan it again.",
+		"part_number_taken": "A part with this brand and part number already exists.",
+		"barcode_taken": "This barcode already belongs to another part.",
+		"part_in_use": "This part is used in work orders and cannot be deleted.",
+		"unknown_part": "This part no longer exists. Pick another one.",
+		"invalid_movement_kind": "Unknown stock operation.",
+		"invalid_filter": "Unknown filter.",
+		"invalid_condition": "Choose new or used."
 	},
 	"units": {
 		"km": "km",
-		"mi": "mi"
+		"mi": "mi",
+		"pcs": "pcs",
+		"l": "l",
+		"kg": "kg",
+		"m": "m"
 	},
 	"vehicles": {
 		"title": "Vehicles",
@@ -223,7 +239,10 @@
 		"phone": "Phone",
 		"create": "Add client",
 		"searchPlaceholder": "Search by name or phone",
-		"addNew": "New client"
+		"addNew": "New client",
+		"edit": "Edit client details",
+		"editHint": "Changes apply everywhere this client appears.",
+		"note": "Note"
 	},
 	"odometer": {
 		"confirmLower": "This reading is lower than the previous one. Save it anyway? (For example, the instrument cluster was replaced.)",
@@ -278,6 +297,7 @@
 		"quantity": "Quantity / hours",
 		"unitPrice": "Price, {currency}",
 		"addItem": "Add work",
+		"addPart": "Add part",
 		"markDone": "Mark as done",
 		"cancel": "Cancel order",
 		"closedHint": "This order is closed. Reopen it to make changes.",
@@ -287,6 +307,97 @@
 		"deleteItem": "Delete this line",
 		"confirmDeleteItem": "Delete this line from the order?",
 		"confirmCancel": "Cancel this work order? It stays in the history as cancelled."
+	},
+	"parts": {
+		"title": "Parts",
+		"searchLabel": "Find a part",
+		"searchPlaceholder": "Name, part number or barcode",
+		"add": "Add part",
+		"addWithBarcode": "Add part with this barcode",
+		"unknownBarcode": "No part has this barcode yet:",
+		"filter": "Show",
+		"filters": {
+			"all": "All",
+			"low": "Low stock"
+		},
+		"noResults": "Nothing found. Check the spelling or add the part.",
+		"noLow": "Nothing is running low.",
+		"empty": "No parts yet. Add the first one.",
+		"low": "Low",
+		"stock": "In stock",
+		"inStock": "In stock: {value}",
+		"addTitle": "New part",
+		"addSubmit": "Add part",
+		"name": "Name",
+		"namePlaceholder": "e.g. Oil filter",
+		"brand": "Brand",
+		"location": "Shelf / bin",
+		"partNumber": "Part number",
+		"partNumberHint": "OEM number or the maker's article, as printed on the box.",
+		"condition": "Condition",
+		"conditions": {
+			"new": "New",
+			"used": "Used"
+		},
+		"unit": "Counted in",
+		"minStock": "Minimum stock",
+		"minStockHint": "Below this amount the part shows up under Low stock. 0: no minimum.",
+		"sellPrice": "Sale price, {currency}",
+		"sellPriceHint": "Used by default when the part is added to a work order.",
+		"note": "Note",
+		"barcode": "Barcode",
+		"barcodeHint": "Scan it from the box, or leave empty if there is none.",
+		"stockNow": "In stock now, {unit}",
+		"barcodes": "Barcodes",
+		"noBarcodes": "No barcodes yet. Scan the box to add one.",
+		"addBarcode": "Add barcode",
+		"removeBarcode": "Remove barcode {code}",
+		"confirmRemoveBarcode": "Remove barcode {code} from this part?",
+		"receive": "Record delivery",
+		"receiveQty": "Received, {unit}",
+		"unitCost": "Purchase price per unit, {currency}",
+		"movementNote": "Note",
+		"movementNotePlaceholder": "e.g. supplier or invoice number",
+		"receiveSubmit": "Add to stock",
+		"count": "Count stock",
+		"countHint": "Enter how many are on the shelf now. The difference is recorded.",
+		"countQty": "On the shelf, {unit}",
+		"countSubmit": "Save count",
+		"edit": "Edit part",
+		"delete": "Delete part",
+		"confirmDelete": "Delete this part and its stock history?",
+		"history": "Stock history",
+		"noHistory": "No stock changes yet.",
+		"kinds": {
+			"receipt": "Delivery",
+			"consumption": "Used",
+			"adjustment": "Count correction"
+		},
+		"costEach": "{price} each",
+		"notInCatalogue": "Not in the list?",
+		"quantity": "Quantity, {unit}",
+		"addToOrder": "Add to order",
+		"pickAnother": "Choose another part",
+		"addUsed": "Add a used one"
+	},
+	"labels": {
+		"title": "QR labels",
+		"print": "Print QR label",
+		"copies": "How many labels",
+		"skip": "Skip used labels",
+		"skipHint": "On a partly used sheet: how many labels at the start are already gone.",
+		"printHint": "A4 sheet with 3 × 8 labels of 70 × 37 mm. In the print dialog choose scale 100% and no margins.",
+		"noCode": "This part has no QR code yet. Open the part and choose “Print QR label”."
+	},
+	"print": {
+		"print": "Print",
+		"back": "Back",
+		"vehicle": "Vehicle",
+		"description": "Work / part",
+		"quantity": "Qty",
+		"price": "Price",
+		"amount": "Amount",
+		"printedAt": "Printed {date}"
 	},
 	"settings": {
 		"title": "Business settings",
