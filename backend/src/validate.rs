@@ -5,6 +5,8 @@ pub const ROLES: &[&str] = &["owner", "mechanic"];
 pub const VEHICLE_ROLES: &[&str] = &["customer", "fleet", "for_sale"];
 pub const DISTANCE_UNITS: &[&str] = &["km", "mi"];
 pub const WORK_ORDER_STATUSES: &[&str] = &["open", "done", "cancelled"];
+pub const PART_UNITS: &[&str] = &["pcs", "l", "kg", "m"];
+pub const PART_CONDITIONS: &[&str] = &["new", "used"];
 
 /// Upper limit for odometer readings; anything above is a typo.
 pub const MAX_ODOMETER: i32 = 9_999_999;
@@ -215,6 +217,62 @@ pub fn price_minor(v: Option<i64>) -> Result<Option<i64>, &'static str> {
     }
 }
 
+/// Required short text: trimmed, not empty, at most `max_chars`.
+fn required_text(raw: &str, max_chars: usize, code: &'static str) -> Result<String, &'static str> {
+    let v = raw.trim();
+    if v.is_empty() || v.chars().count() > max_chars {
+        return Err(code);
+    }
+    Ok(v.to_string())
+}
+
+pub fn part_name(raw: &str) -> Result<String, &'static str> {
+    required_text(raw, 160, "invalid_part_name")
+}
+
+/// OEM number or the maker's article, uppercase, inner spaces collapsed.
+/// Dashes, dots and spaces are kept as written but ignored when searching.
+pub fn part_number(raw: Option<&str>) -> Result<Option<String>, &'static str> {
+    let Some(raw) = raw.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    let v = raw
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_uppercase();
+    let ok = v.chars().count() <= 40
+        && v.chars().any(|c| c.is_alphanumeric())
+        && v.chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '.' | '/'));
+    ok.then_some(Some(v)).ok_or("invalid_part_number")
+}
+
+/// Same normalization as the `parts_part_number_idx` index.
+pub fn part_number_key(v: &str) -> String {
+    v.chars()
+        .filter(|c| !c.is_whitespace() && !matches!(c, '-' | '.'))
+        .flat_map(char::to_uppercase)
+        .collect()
+}
+
+/// Barcodes and QR payloads are compared exactly, so only the surrounding
+/// whitespace is trimmed.
+pub fn barcode(raw: &str) -> Result<String, &'static str> {
+    let v = raw.trim();
+    let ok = (1..=128).contains(&v.chars().count()) && !v.chars().any(char::is_control);
+    ok.then(|| v.to_string()).ok_or("invalid_barcode")
+}
+
+/// Stock quantities may be zero (a minimum level of 0 means "no minimum").
+pub fn stock_quantity_milli(v: i64) -> Result<i64, &'static str> {
+    if (0..=MAX_QUANTITY_MILLI).contains(&v) {
+        Ok(v)
+    } else {
+        Err("invalid_quantity")
+    }
+}
+
 /// Line total in minor units: quantity (thousandths) x unit price,
 /// rounded half up to a whole minor unit.
 pub fn line_total(quantity_milli: i64, unit_price_minor: i64) -> i64 {
@@ -271,6 +329,30 @@ mod tests {
         );
         assert_eq!(phone(Some("call me")), Err("invalid_phone"));
         assert_eq!(phone(Some("123")), Err("invalid_phone"));
+    }
+
+    #[test]
+    fn part_numbers() {
+        assert_eq!(
+            part_number(Some("  04152-yzza1 ")).unwrap().as_deref(),
+            Some("04152-YZZA1")
+        );
+        assert_eq!(
+            part_number(Some("0 986  494 053")).unwrap().as_deref(),
+            Some("0 986 494 053")
+        );
+        assert_eq!(part_number(Some("")), Ok(None));
+        assert_eq!(part_number(Some("--")), Err("invalid_part_number"));
+        assert_eq!(part_number(Some("A#1")), Err("invalid_part_number"));
+        assert_eq!(part_number_key("0 986-494.053"), "0986494053");
+        assert_eq!(part_number_key("04152-yzza1"), "04152YZZA1");
+    }
+
+    #[test]
+    fn barcodes() {
+        assert_eq!(barcode(" 5901234123457\n"), Ok("5901234123457".into()));
+        assert_eq!(barcode("   "), Err("invalid_barcode"));
+        assert_eq!(barcode("a\u{0}b"), Err("invalid_barcode"));
     }
 
     #[test]

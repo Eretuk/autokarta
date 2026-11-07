@@ -14,7 +14,8 @@
 		"staff": "Pracownicy",
 		"account": "Konto",
 		"vehicles": "Pojazdy",
-		"orders": "Zlecenia"
+		"orders": "Zlecenia",
+		"parts": "Części"
 	},
 	"login": {
 		"title": "Logowanie",
@@ -162,11 +163,26 @@
 		"unknown_client": "Ten klient już nie istnieje. Wybierz innego.",
 		"owner_change_before_start": "Data jest wcześniejsza niż początek obecnej własności.",
 		"reading_belongs_to_work_order": "Ten odczyt należy do zlecenia. Zmień go tam.",
-		"invalid_description": "Opisz pracę."
+		"invalid_description": "Opisz pracę.",
+		"invalid_part_name": "Wpisz nazwę części.",
+		"invalid_part_number": "Numer części: do 40 liter, cyfr, spacji, myślników, kropek lub ukośników.",
+		"invalid_unit": "Wybierz jednostkę z listy.",
+		"invalid_barcode": "Tego kodu nie można użyć. Zeskanuj go ponownie.",
+		"part_number_taken": "Część tej marki z tym numerem już istnieje.",
+		"barcode_taken": "Ten kod kreskowy należy już do innej części.",
+		"part_in_use": "Ta część jest użyta w zleceniach i nie można jej usunąć.",
+		"unknown_part": "Ta część już nie istnieje. Wybierz inną.",
+		"invalid_movement_kind": "Nieznana operacja magazynowa.",
+		"invalid_filter": "Nieznany filtr.",
+		"invalid_condition": "Wybierz: nowa lub używana."
 	},
 	"units": {
 		"km": "km",
-		"mi": "mile"
+		"mi": "mile",
+		"pcs": "szt.",
+		"l": "l",
+		"kg": "kg",
+		"m": "m"
 	},
 	"vehicles": {
 		"title": "Pojazdy",
@@ -229,7 +245,10 @@
 		"phone": "Telefon",
 		"create": "Dodaj klienta",
 		"searchPlaceholder": "Szukaj po nazwisku lub telefonie",
-		"addNew": "Nowy klient"
+		"addNew": "Nowy klient",
+		"edit": "Edytuj dane klienta",
+		"editHint": "Zmiany obowiązują wszędzie, gdzie występuje ten klient.",
+		"note": "Notatka"
 	},
 	"odometer": {
 		"confirmLower": "Przebieg jest mniejszy niż poprzednio. Zapisać mimo to? (Np. wymieniono licznik.)",
@@ -288,6 +307,7 @@
 		"quantity": "Ilość / godziny",
 		"unitPrice": "Cena, {currency}",
 		"addItem": "Dodaj pracę",
+		"addPart": "Dodaj część",
 		"markDone": "Gotowe",
 		"cancel": "Anuluj zlecenie",
 		"closedHint": "Zlecenie jest zamknięte. Otwórz je ponownie, aby wprowadzić zmiany.",
@@ -297,6 +317,97 @@
 		"deleteItem": "Usuń pozycję",
 		"confirmDeleteItem": "Usunąć tę pozycję ze zlecenia?",
 		"confirmCancel": "Anulować zlecenie? Zostanie w historii jako anulowane."
+	},
+	"parts": {
+		"title": "Części",
+		"searchLabel": "Znajdź część",
+		"searchPlaceholder": "Nazwa, numer części lub kod kreskowy",
+		"add": "Dodaj część",
+		"addWithBarcode": "Dodaj część z tym kodem",
+		"unknownBarcode": "Żadna część nie ma jeszcze tego kodu:",
+		"filter": "Pokaż",
+		"filters": {
+			"all": "Wszystkie",
+			"low": "Kończą się"
+		},
+		"noResults": "Nic nie znaleziono. Sprawdź pisownię lub dodaj część.",
+		"noLow": "Niczego nie brakuje.",
+		"empty": "Nie ma jeszcze części. Dodaj pierwszą.",
+		"low": "Mało",
+		"stock": "Na stanie",
+		"inStock": "Na stanie: {value}",
+		"addTitle": "Nowa część",
+		"addSubmit": "Dodaj część",
+		"name": "Nazwa",
+		"namePlaceholder": "np. Filtr oleju",
+		"brand": "Marka",
+		"location": "Półka / pojemnik",
+		"partNumber": "Numer części",
+		"partNumberHint": "Numer OE lub numer katalogowy producenta, jak na pudełku.",
+		"condition": "Stan",
+		"conditions": {
+			"new": "Nowa",
+			"used": "Używana"
+		},
+		"unit": "Liczone w",
+		"minStock": "Stan minimalny",
+		"minStockHint": "Poniżej tej ilości część pojawi się w „Kończą się”. 0: bez minimum.",
+		"sellPrice": "Cena sprzedaży, {currency}",
+		"sellPriceHint": "Używana domyślnie przy dodaniu części do zlecenia.",
+		"note": "Notatka",
+		"barcode": "Kod kreskowy",
+		"barcodeHint": "Zeskanuj go z pudełka albo zostaw puste, jeśli go nie ma.",
+		"stockNow": "Na stanie teraz, {unit}",
+		"barcodes": "Kody kreskowe",
+		"noBarcodes": "Brak kodów. Zeskanuj pudełko, aby dodać kod.",
+		"addBarcode": "Dodaj kod",
+		"removeBarcode": "Usuń kod {code}",
+		"confirmRemoveBarcode": "Usunąć kod {code} z tej części?",
+		"receive": "Przyjmij dostawę",
+		"receiveQty": "Przyjęto, {unit}",
+		"unitCost": "Cena zakupu za jednostkę, {currency}",
+		"movementNote": "Notatka",
+		"movementNotePlaceholder": "np. dostawca lub numer faktury",
+		"receiveSubmit": "Dodaj na stan",
+		"count": "Policz stan",
+		"countHint": "Wpisz, ile jest teraz na półce. Różnica zostanie zapisana.",
+		"countQty": "Na półce, {unit}",
+		"countSubmit": "Zapisz stan",
+		"edit": "Edytuj część",
+		"delete": "Usuń część",
+		"confirmDelete": "Usunąć tę część i jej historię magazynową?",
+		"history": "Historia stanu",
+		"noHistory": "Brak zmian stanu.",
+		"kinds": {
+			"receipt": "Dostawa",
+			"consumption": "Zużyto",
+			"adjustment": "Korekta po liczeniu"
+		},
+		"costEach": "{price} za szt.",
+		"notInCatalogue": "Nie ma na liście?",
+		"quantity": "Ilość, {unit}",
+		"addToOrder": "Dodaj do zlecenia",
+		"pickAnother": "Wybierz inną część",
+		"addUsed": "Dodaj używaną"
+	},
+	"labels": {
+		"title": "Etykiety QR",
+		"print": "Drukuj etykietę QR",
+		"copies": "Ile etykiet",
+		"skip": "Pomiń zużyte etykiety",
+		"skipHint": "Na częściowo zużytym arkuszu: ile etykiet na początku już brakuje.",
+		"printHint": "Arkusz A4 z 3 × 8 etykietami 70 × 37 mm. W oknie drukowania wybierz skalę 100% i brak marginesów.",
+		"noCode": "Ta część nie ma jeszcze kodu QR. Otwórz część i wybierz „Drukuj etykietę QR”."
+	},
+	"print": {
+		"print": "Drukuj",
+		"back": "Wstecz",
+		"vehicle": "Pojazd",
+		"description": "Usługa / część",
+		"quantity": "Ilość",
+		"price": "Cena",
+		"amount": "Kwota",
+		"printedAt": "Wydrukowano {date}"
 	},
 	"settings": {
 		"title": "Ustawienia warsztatu",

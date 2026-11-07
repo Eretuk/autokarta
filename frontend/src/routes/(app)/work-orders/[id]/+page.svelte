@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { api, errorMessage } from '$lib/api';
+	import Icon from '$lib/components/Icon.svelte';
+	import PartPicker from '$lib/components/PartPicker.svelte';
 	import Plate from '$lib/components/Plate.svelte';
 	import Sheet from '$lib/components/Sheet.svelte';
 	import {
 		formatDistance,
 		formatMoney,
 		formatQuantity,
+		formatStock,
 		moneyInput,
 		parseMoney,
 		parseQuantity,
@@ -17,7 +20,7 @@
 	import { parseReading, withLowerConfirm } from '$lib/odometer';
 	import { session } from '$lib/session.svelte';
 	import { business } from '$lib/settings.svelte';
-	import type { WorkOrderDetail, WorkOrderItem, WorkOrderStatus } from '$lib/types';
+	import type { PartSummary, WorkOrderDetail, WorkOrderItem, WorkOrderStatus } from '$lib/types';
 
 	let { data } = $props();
 	// Follows navigation to another order; local updates overwrite it.
@@ -71,6 +74,67 @@
 			error = errorMessage(err);
 		} finally {
 			addBusy = false;
+		}
+	}
+
+	// ----- add part -----
+	let partOpen = $state(false);
+	let picked = $state<PartSummary | null>(null);
+	let pQty = $state('1');
+	let pPrice = $state('');
+	let pError = $state('');
+	let pBusy = $state(false);
+	let pQtyInput = $state<HTMLInputElement>();
+
+	function openPart() {
+		picked = null;
+		pError = '';
+		partOpen = true;
+	}
+
+	async function pick(part: PartSummary) {
+		picked = part;
+		pQty = '1';
+		pPrice = moneyInput(part.sell_price_minor, currency);
+		pError = '';
+		// The quantity is the next thing to type (4.5 l of oil): focus it with
+		// the default selected, so typing replaces it.
+		await tick();
+		pQtyInput?.focus();
+		pQtyInput?.select();
+	}
+
+	async function addPart(e: SubmitEvent) {
+		e.preventDefault();
+		if (!picked) return;
+		const quantity = parseQuantity(pQty);
+		if (quantity === null) {
+			pError = t('errors.invalid_quantity');
+			return;
+		}
+		// Without a typed price the server applies the catalogue price.
+		let unitPrice: number | undefined;
+		if (isOwner && pPrice.trim()) {
+			const p = parseMoney(pPrice, currency);
+			if (p === null) {
+				pError = t('errors.invalid_price');
+				return;
+			}
+			unitPrice = p;
+		}
+		pBusy = true;
+		pError = '';
+		try {
+			wo = await api<WorkOrderDetail>('POST', `${base}/items`, {
+				part_id: picked.id,
+				quantity_milli: quantity,
+				unit_price_minor: unitPrice
+			});
+			partOpen = false;
+		} catch (err) {
+			pError = errorMessage(err);
+		} finally {
+			pBusy = false;
 		}
 	}
 
@@ -231,6 +295,7 @@
 	</dl>
 	<div class="actions">
 		<button class="btn" type="button" onclick={openDetails}>{t('workOrders.editDetails')}</button>
+		<a class="btn" href="/print/work-orders/{wo.id}">{t('print.print')}</a>
 	</div>
 </section>
 
@@ -246,10 +311,15 @@
 			<li>
 				<button class="row-link" type="button" onclick={() => openItem(i)} disabled={!isOpen}>
 					<span class="row-main">
-						<span class="desc">{i.description}</span>
-						{#if i.quantity_milli !== 1000}
+						<span class="desc"
+							>{i.description}{#if i.condition === 'used'}
+								<span class="badge accent">{t('parts.conditions.used')}</span>{/if}</span
+						>
+						{#if i.kind === 'part' || i.quantity_milli !== 1000}
 							<span class="hint">
-								× {formatQuantity(i.quantity_milli)}{#if isOwner && i.unit_price_minor !== undefined}{' · ' +
+								{#if i.part_number}<span class="mono">{i.part_number}</span>{' · '}{/if}× {i.unit
+									? formatStock(i.quantity_milli, i.unit)
+									: formatQuantity(i.quantity_milli)}{#if isOwner && i.unit_price_minor !== undefined}{' · ' +
 										formatMoney(i.unit_price_minor, currency)}{/if}
 							</span>
 						{/if}
@@ -280,6 +350,8 @@
 {/if}
 
 {#if isOpen}
+	<button class="btn block add-part" type="button" onclick={openPart}><Icon name="box" />{t('workOrders.addPart')}</button>
+
 	<form class="add card" onsubmit={addItem}>
 		<label class="field">
 			{t('workOrders.addWork')}
@@ -323,6 +395,57 @@
 		<button class="btn" type="button" disabled={statusBusy} onclick={() => setStatus('open')}>{t('workOrders.reopen')}</button>
 	</div>
 {/if}
+
+<Sheet bind:open={partOpen} title={t('workOrders.addPart')}>
+	{#if picked}
+		<form onsubmit={addPart}>
+			{#if pError}<div class="notice error" role="alert">{pError}</div>{/if}
+			<div class="picked">
+				<strong
+					>{picked.name}{#if picked.condition === 'used'}
+						<span class="badge accent">{t('parts.conditions.used')}</span>{/if}</strong
+				>
+				{#if picked.brand || picked.part_number}
+					<span class="hint">
+						{picked.brand ?? ''}{#if picked.brand && picked.part_number}{' · '}{/if}<span class="mono"
+							>{picked.part_number ?? ''}</span
+						>
+					</span>
+				{/if}
+				<span class="hint" class:danger={picked.stock_milli <= 0}
+					>{t('parts.inStock', { value: formatStock(picked.stock_milli, picked.unit) })}</span
+				>
+			</div>
+			<div class="two-cols">
+				<label class="field">
+					{t('parts.quantity', { unit: t(`units.${picked.unit}`) })}
+					<input
+						bind:this={pQtyInput}
+						type="text"
+						inputmode="decimal"
+						bind:value={pQty}
+						maxlength="12"
+						autocomplete="off"
+						enterkeyhint="done"
+						onfocus={(e) => e.currentTarget.select()}
+					/>
+				</label>
+				{#if isOwner}
+					<label class="field">
+						{t('workOrders.unitPrice', { currency })}
+						<input type="text" inputmode="decimal" bind:value={pPrice} maxlength="16" autocomplete="off" />
+					</label>
+				{/if}
+			</div>
+			<button class="btn primary block" type="submit" disabled={pBusy}>{t('parts.addToOrder')}</button>
+			<button class="btn block gap" type="button" disabled={pBusy} onclick={() => (picked = null)}
+				>{t('parts.pickAnother')}</button
+			>
+		</form>
+	{:else}
+		<PartPicker onPick={pick} back="/work-orders/{wo.id}" />
+	{/if}
+</Sheet>
 
 <Sheet bind:open={itemOpen} title={t('workOrders.editItem')}>
 	<form onsubmit={saveItem}>
@@ -437,6 +560,17 @@
 	}
 	.add {
 		margin-top: 16px;
+	}
+	.add-part {
+		margin-top: 16px;
+	}
+	.picked {
+		display: grid;
+		gap: 3px;
+		margin-bottom: 14px;
+	}
+	.danger {
+		color: var(--danger);
 	}
 	.status-actions {
 		margin-bottom: 16px;

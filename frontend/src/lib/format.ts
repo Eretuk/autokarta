@@ -1,7 +1,8 @@
 // Money, quantities and vehicle labels. Amounts travel as integers (minor
 // units, thousandths); only this module converts them to and from text.
 
-import { formatNumber, i18n } from './i18n/index.svelte';
+import { formatNumber, i18n, t } from './i18n/index.svelte';
+import type { PartUnit } from './types';
 
 /** Number of minor units in the currency (2 for PLN, 0 for JPY). */
 export function currencyDigits(currency: string): number {
@@ -57,6 +58,11 @@ export function parseQuantity(raw: string): number | null {
 
 export function formatQuantity(milli: number): string {
 	return formatNumber(milli / 1000, { maximumFractionDigits: 3 });
+}
+
+/** "3.5 l", "2 pcs": a stock quantity with its unit. */
+export function formatStock(milli: number, unit: PartUnit): string {
+	return `${formatQuantity(milli)} ${t(`units.${unit}`)}`;
 }
 
 export function quantityInput(milli: number): string {

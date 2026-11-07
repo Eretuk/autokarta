@@ -1,7 +1,9 @@
-//! Work orders and their lines (labour for now; parts come with the stock).
+//! Work orders and their lines: labour and parts from stock.
 //!
 //! Prices are financial data: mechanics never receive them and cannot set
-//! them. They record what was done; the owner prices it.
+//! them. They record what was done; the owner prices it. A part line takes
+//! the part's catalogue price by default and comes off the stock while the
+//! order is not cancelled.
 
 use axum::{
     extract::{Path, Query, State},
@@ -17,7 +19,7 @@ use uuid::Uuid;
 use crate::{
     auth::CurrentUser,
     error::{AppError, AppResult},
-    routes::{clients::Client, deserialize_some, settings, vehicles},
+    routes::{clients::Client, deserialize_some, parts, settings, vehicles},
     state::AppState,
     validate,
 };
@@ -194,7 +196,7 @@ async fn update(
         .map_err(AppError::Validation)?;
 
     let mut tx = state.db.begin().await?;
-    let (vehicle_id, _) = lock_order(&mut tx, id).await?;
+    let (vehicle_id, old_status) = lock_order(&mut tx, id).await?;
 
     sqlx::query(
         "UPDATE work_orders
@@ -213,9 +215,12 @@ async fn update(
     .bind(complaint.flatten())
     .bind(notes.is_some())
     .bind(notes.flatten())
-    .bind(status)
+    .bind(&status)
     .execute(&mut *tx)
     .await?;
+    if let Some(new_status) = &status {
+        sync_stock(&mut tx, id, &old_status, new_status, user.id).await?;
+    }
 
     if let Some(reading) = odometer {
         vehicles::insert_reading(
@@ -232,6 +237,50 @@ async fn update(
     tx.commit().await?;
 
     Ok(Json(load_detail(&state, id, &user).await?))
+}
+
+/// A cancelled order used no parts: cancelling puts its parts back in
+/// stock, reopening takes them off again.
+async fn sync_stock(
+    conn: &mut PgConnection,
+    id: Uuid,
+    old_status: &str,
+    new_status: &str,
+    user_id: Uuid,
+) -> AppResult<()> {
+    let (was, is) = (old_status == "cancelled", new_status == "cancelled");
+    if was == is {
+        return Ok(());
+    }
+    // Same lock order as everywhere else: the order first, then its parts.
+    sqlx::query(
+        "SELECT 1 FROM parts WHERE id IN
+            (SELECT part_id FROM work_order_items WHERE work_order_id = $1 AND part_id IS NOT NULL)
+          ORDER BY id FOR UPDATE",
+    )
+    .bind(id)
+    .execute(&mut *conn)
+    .await?;
+    if is {
+        sqlx::query(
+            "DELETE FROM stock_movements
+              WHERE work_order_item_id IN (SELECT id FROM work_order_items WHERE work_order_id = $1)",
+        )
+        .bind(id)
+        .execute(conn)
+        .await?;
+    } else {
+        sqlx::query(
+            "INSERT INTO stock_movements (part_id, kind, quantity_milli, work_order_item_id, created_by)
+             SELECT part_id, 'consumption', -quantity_milli, id, $2
+               FROM work_order_items WHERE work_order_id = $1 AND kind = 'part'",
+        )
+        .bind(id)
+        .bind(user_id)
+        .execute(conn)
+        .await?;
+    }
+    Ok(())
 }
 
 /// Locks the order row; returns (vehicle_id, status).
@@ -255,7 +304,9 @@ async fn lock_open_order(conn: &mut PgConnection, id: Uuid) -> AppResult<()> {
 
 #[derive(Deserialize)]
 struct AddItem {
-    description: String,
+    /// Required for labour; for a part, defaults to the part's name.
+    description: Option<String>,
+    part_id: Option<Uuid>,
     quantity_milli: Option<i64>,
     unit_price_minor: Option<i64>,
 }
@@ -269,24 +320,65 @@ async fn add_item(
     if req.unit_price_minor.is_some() && !user.is_owner() {
         return Err(AppError::Forbidden);
     }
-    let description = validate::item_description(&req.description).map_err(AppError::Validation)?;
+    let description = req
+        .description
+        .as_deref()
+        .filter(|d| !d.trim().is_empty() || req.part_id.is_none())
+        .map(validate::item_description)
+        .transpose()
+        .map_err(AppError::Validation)?;
+    if description.is_none() && req.part_id.is_none() {
+        return Err(AppError::Validation("invalid_description"));
+    }
     let quantity = validate::quantity_milli(req.quantity_milli.unwrap_or(1000))
         .map_err(AppError::Validation)?;
     let price = validate::price_minor(req.unit_price_minor).map_err(AppError::Validation)?;
 
     let mut tx = state.db.begin().await?;
     lock_open_order(&mut tx, id).await?;
-    sqlx::query(
-        "INSERT INTO work_order_items (work_order_id, description, quantity_milli, unit_price_minor, created_by)
-         VALUES ($1, $2, $3, $4, $5)",
+    let (kind, description, price) = match req.part_id {
+        Some(part_id) => {
+            let part = parts::lock_part(&mut tx, part_id)
+                .await
+                .map_err(|e| match e {
+                    AppError::NotFound => AppError::Validation("unknown_part"),
+                    e => e,
+                })?;
+            (
+                "part",
+                description.unwrap_or(part.name),
+                price.or(part.sell_price_minor),
+            )
+        }
+        None => ("labour", description.unwrap_or_default(), price),
+    };
+    let item_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO work_order_items
+             (work_order_id, kind, part_id, description, quantity_milli, unit_price_minor, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id",
     )
     .bind(id)
+    .bind(kind)
+    .bind(req.part_id)
     .bind(description)
     .bind(quantity)
     .bind(price)
     .bind(user.id)
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await?;
+    if let Some(part_id) = req.part_id {
+        sqlx::query(
+            "INSERT INTO stock_movements (part_id, kind, quantity_milli, work_order_item_id, created_by)
+             VALUES ($1, 'consumption', $2, $3, $4)",
+        )
+        .bind(part_id)
+        .bind(-quantity)
+        .bind(item_id)
+        .bind(user.id)
+        .execute(&mut *tx)
+        .await?;
+    }
     touch_order(&mut tx, id).await?;
     tx.commit().await?;
 
@@ -333,13 +425,14 @@ async fn update_item(
 
     let mut tx = state.db.begin().await?;
     lock_open_order(&mut tx, id).await?;
-    let updated = sqlx::query(
+    let part_id: Option<Uuid> = sqlx::query_scalar(
         "UPDATE work_order_items
             SET description = COALESCE($3, description),
                 quantity_milli = COALESCE($4, quantity_milli),
                 unit_price_minor = CASE WHEN $5 THEN $6 ELSE unit_price_minor END,
                 updated_at = now()
-          WHERE id = $2 AND work_order_id = $1",
+          WHERE id = $2 AND work_order_id = $1
+          RETURNING part_id",
     )
     .bind(id)
     .bind(item_id)
@@ -347,10 +440,16 @@ async fn update_item(
     .bind(quantity)
     .bind(price.is_some())
     .bind(price.flatten())
-    .execute(&mut *tx)
-    .await?;
-    if updated.rows_affected() == 0 {
-        return Err(AppError::NotFound);
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    if let (Some(part_id), Some(quantity)) = (part_id, quantity) {
+        parts::lock_part(&mut tx, part_id).await?;
+        sqlx::query("UPDATE stock_movements SET quantity_milli = $2 WHERE work_order_item_id = $1")
+            .bind(item_id)
+            .bind(-quantity)
+            .execute(&mut *tx)
+            .await?;
     }
     touch_order(&mut tx, id).await?;
     tx.commit().await?;
@@ -418,6 +517,18 @@ struct Item {
     kind: String,
     description: String,
     quantity_milli: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    part_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    part_number: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    brand: Option<String>,
+    /// "used" parts are marked on screen and on paper.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    condition: Option<String>,
+    /// Unit of the part ("l" for oil); labour has none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     unit_price_minor: Option<i64>,
     #[sqlx(skip)]
@@ -499,9 +610,11 @@ async fn load_detail(state: &AppState, id: Uuid, user: &CurrentUser) -> AppResul
             .await?;
 
     let mut items = sqlx::query_as::<_, Item>(
-        "SELECT id, kind, description, quantity_milli, unit_price_minor
-           FROM work_order_items WHERE work_order_id = $1
-          ORDER BY created_at, id",
+        "SELECT i.id, i.kind, i.description, i.quantity_milli, i.unit_price_minor,
+                i.part_id, p.part_number, p.brand, p.condition, p.unit
+           FROM work_order_items i LEFT JOIN parts p ON p.id = i.part_id
+          WHERE i.work_order_id = $1
+          ORDER BY i.created_at, i.id",
     )
     .bind(id)
     .fetch_all(&state.db)

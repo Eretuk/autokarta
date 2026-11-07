@@ -270,6 +270,10 @@ select:focus {
 .badge.muted {
 	color: var(--ink-muted);
 }
+.badge.danger {
+	border-color: var(--danger);
+	color: var(--danger);
+}
 
 .visually-hidden {
 	position: absolute;

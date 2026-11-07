@@ -107,7 +107,8 @@ rotation plus an off-site copy are a hard requirement before real data goes in.
 - `autokarta create-admin --username <name>`: prompts for password, creates an owner.
 - `autokarta` / `autokarta serve`: HTTP server.
 - Migrations: `users` + `sessions`; vehicles, clients, ownership history,
-  odometer readings, work orders + items, business settings (`backend/migrations/`).
+  odometer readings, work orders + items, business settings; parts, barcodes,
+  stock movements, part lines in work orders (`backend/migrations/`).
 - Session auth: 256-bit random token in an HttpOnly, SameSite=Lax cookie
   `autokarta_session`; DB stores only its SHA-256 hash. `COOKIE_SECURE=false`
   only for local HTTP development.
@@ -133,7 +134,7 @@ API (all JSON, prefix `/api`):
 | PATCH | `/settings` | owner | `{currency?, distance_unit?}` |
 | GET | `/clients?q=` | staff | search by name or phone |
 | POST | `/clients` | staff | `{name, phone?, note?}` |
-| PUT | `/clients/{id}` | staff | same body (no UI yet) |
+| PUT | `/clients/{id}` | staff | same body |
 | GET | `/vehicles?q=` | staff | search by plate, VIN or frame number, ignoring spaces/dashes |
 | POST | `/vehicles` | staff | vehicle fields + `owner_id?`, `odometer?` |
 | GET/PUT | `/vehicles/{id}` | staff | detail with owner history, readings, work orders |
@@ -143,10 +144,24 @@ API (all JSON, prefix `/api`):
 | GET | `/work-orders?status=` | staff | |
 | POST | `/work-orders` | staff | `{vehicle_id, odometer?, complaint?, confirm_lower?}` |
 | GET/PATCH | `/work-orders/{id}` | staff | `{complaint?, notes?, status?, odometer?, confirm_lower?}` |
-| POST | `/work-orders/{id}/items` | staff | `{description, quantity_milli?, unit_price_minor?}` |
+| POST | `/work-orders/{id}/items` | staff | `{description?, part_id?, quantity_milli?, unit_price_minor?}`; a part line defaults to the part's name and price |
 | PATCH/DELETE | `/work-orders/{id}/items/{item_id}` | staff | |
+| GET | `/parts?q=&filter=low` | staff | name, brand, part number (separators ignored) or exact barcode (`barcode_match`) |
+| POST | `/parts` | staff | `{name, brand?, part_number?, condition?, unit?, location?, min_stock_milli?, note?, sell_price_minor?, barcodes?, stock_milli?}` |
+| GET/PUT | `/parts/{id}` | staff | detail with barcodes and the last 100 movements |
+| DELETE | `/parts/{id}` | owner | only if no work order uses it |
+| POST/DELETE | `/parts/{id}/barcodes` | staff | `{barcode}`; a barcode belongs to one part |
+| POST | `/parts/{id}/movements` | staff | `{kind: receipt\|count, quantity_milli, unit_cost_minor?, note?}`; a count records the difference |
 
 Prices and totals are owner-only: mechanics never receive them and cannot set
+them (this includes part sale prices and purchase costs). Stock is the sum of
+`stock_movements` and may go negative (fitting a part whose delivery was not
+recorded must not be blocked). Used parts are common: `condition` (`new` /
+`used`) is part of a part's identity (unique on brand + part number +
+condition), so a used one is its own item with its own stock, price and
+label, and is marked on screen, on printed orders and on labels. Stock is
+not split into purchase batches: costs are kept per receipt. A part line in a work order owns one
+consumption movement; cancelling the order removes them, reopening restores
 them. A reading lower than the latest one returns 409
 `odometer_lower_than_previous` unless `confirm_lower` is sent. API tests in
 `backend/src/routes/api_tests.rs` run against PostgreSQL via `sqlx::test`
@@ -160,7 +175,17 @@ worker, en/pl/ru. Step 2: home page is vehicle search (typing or scanning
 VIN/plate), new vehicle form with owner picker, vehicle page (edit, owner
 change, odometer history, work orders), work order list and work order page
 (items, prices for owners, status, mileage); owners set currency and distance
-unit on the account page. The backend sets `Cache-Control`: `immutable` for
+unit on the account page. Step 3: parts tab (search, scan, low-stock
+filter), new part form (barcode from a scan), part page (stock, delivery,
+stock count, barcodes, history), parts in work orders (search or scan), client
+details editable from the vehicle page. Printable pages live in the
+`(print)` route group (no app chrome, always white paper): a work order on A4
+(`/print/work-orders/{id}`, prices only for owners because the API only gives
+them to owners) and QR labels on A4 sticker sheets, 3 x 8 of 70 x 37 mm
+(`/print/labels?part={id}`). A label carries the part's own code `AK-XXXXXXXX`
+(Crockford base32), stored as one of its barcodes, so scanning it uses the
+normal barcode search. QR codes are drawn with `uqr` (MIT). Shelf labels are
+not done yet. The backend sets `Cache-Control`: `immutable` for
 `/_app/immutable/*`, `no-cache` for other static files.
 
 Deployment: `Dockerfile` (node build + cargo-chef + debian-slim, non-root),

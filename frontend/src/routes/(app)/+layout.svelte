@@ -17,6 +17,7 @@
 	const items: NavItem[] = [
 		{ href: '/', label: 'nav.vehicles', icon: 'car' },
 		{ href: '/work-orders', label: 'nav.orders', icon: 'orders' },
+		{ href: '/parts', label: 'nav.parts', icon: 'box' },
 		{ href: '/staff', label: 'nav.staff', icon: 'staff', ownerOnly: true },
 		{ href: '/account', label: 'nav.account', icon: 'account' }
 	];
