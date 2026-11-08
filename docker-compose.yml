@@ -1,29 +1,35 @@
 # Production: app + PostgreSQL + daily backups.
 # HTTPS is terminated by an external reverse proxy that forwards to APP_BIND
 # (default 127.0.0.1:8080).
-#   cp .env.example .env   # set POSTGRES_PASSWORD
-#   docker compose up -d --build
+# The server needs only this file, deploy/backup.sh and .env.
+#   cp .env.example .env   # set POSTGRES_PASSWORD and AUTOKARTA_IMAGE
+#   docker compose pull && docker compose up -d
 #   docker compose exec app autokarta create-admin --username owner
+# Update: docker compose pull app && docker compose up -d app
+# Build locally instead of pulling: docker compose up -d --build
 name: autokarta
 
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: autokarta
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: autokarta
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # PostgreSQL 18+ images keep data in /var/lib/postgresql/<major>/docker,
+      # so the volume is mounted one level up (lets pg_upgrade work in place).
+      - postgres:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U autokarta -d autokarta"]
       interval: 5s
       retries: 10
 
   app:
+    # Published by CI to ghcr.io; `build` is used only with --build.
+    image: ${AUTOKARTA_IMAGE:-autokarta:latest}
     build: .
-    image: autokarta:latest
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://autokarta:${POSTGRES_PASSWORD}@db:5432/autokarta
@@ -36,7 +42,7 @@ services:
         condition: service_healthy
 
   backup:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       PGHOST: db
@@ -54,4 +60,4 @@ services:
         condition: service_healthy
 
 volumes:
-  pgdata:
+  postgres:

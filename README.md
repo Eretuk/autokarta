@@ -46,11 +46,24 @@ One server with Docker. The app must be reached over HTTPS (session cookies
 are `Secure`, and the camera scanner only works over HTTPS), so put a reverse
 proxy in front of it.
 
+CI builds the image and pushes it to GitHub Container Registry on every
+commit to `main` (tags `latest` and `sha-<commit>`) and on version tags
+`v1.2.3` (tags `1.2.3` and `1.2`): `ghcr.io/eretuk/autokarta`. If the package
+is private, log in on the server once with a personal access token that has
+`read:packages`: `echo <token> | docker login ghcr.io -u <github-user> --password-stdin`.
+
+The server needs only `docker-compose.yml`, `deploy/backup.sh` and `.env`:
+
 ```bash
-cp .env.example .env     # set POSTGRES_PASSWORD (long random)
-docker compose up -d --build
+cp .env.example .env     # set POSTGRES_PASSWORD (long random) and AUTOKARTA_IMAGE
+docker compose pull
+docker compose up -d
 docker compose exec app autokarta create-admin --username owner
 ```
+
+Update to a new image: `docker compose pull app && docker compose up -d app`
+(migrations run on startup). To build on the server instead of pulling:
+`docker compose up -d --build`.
 
 The reverse proxy (nginx, Traefik, Caddy, ...) only terminates TLS and
 forwards the domain to `APP_BIND` (default `127.0.0.1:8080`). The app sets its
@@ -61,6 +74,10 @@ autokarta.example.com {
 	reverse_proxy 127.0.0.1:8080
 }
 ```
+
+PostgreSQL is version 18. Its data lives in the `postgres` volume, mounted at
+`/var/lib/postgresql` (the image keeps each major version in its own
+subdirectory). A major upgrade needs a dump and restore (or `pg_upgrade`).
 
 ### Backups
 
