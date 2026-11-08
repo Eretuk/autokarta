@@ -98,7 +98,7 @@ Stack (as scaffolded, exact versions pinned in `package.json`):
   Russian UI falls back to the system font. Open question for the author.
 
 ### Database
-PostgreSQL 17 (dev: `docker-compose.dev.yml`). Daily `pg_dump` backups with
+PostgreSQL 18 (dev: `docker-compose.dev.yml`). Daily `pg_dump` backups with
 rotation plus an off-site copy are a hard requirement before real data goes in.
 
 ## 4. What exists now
@@ -192,6 +192,9 @@ Deployment: `Dockerfile` (node build + cargo-chef + debian-slim, non-root),
 `docker-compose.yml` (db, app, backup; **no proxy**: production runs behind
 an external reverse proxy that terminates TLS and forwards to `APP_BIND`),
 `deploy/backup.sh` (daily `pg_dump` into `./backups` with rotation).
+CI pushes the image to `ghcr.io/eretuk/autokarta` (only ghcr.io, never Docker
+Hub) from `main` (`latest`, `sha-*`) and `v*` tags; the server pulls it via
+`AUTOKARTA_IMAGE`. PostgreSQL 18 volume is mounted at `/var/lib/postgresql`.
 Security headers (Referrer-Policy, nosniff, frame deny, Permissions-Policy,
 HSTS when `COOKIE_SECURE`) are set by the backend, never only in a proxy.
 Dev HTTPS for phones: `docker-compose.dev.yml --profile https` (Caddy with
