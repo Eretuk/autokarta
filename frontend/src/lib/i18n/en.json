@@ -26,6 +26,12 @@
 		"forgot": "Forgot your password? Ask the owner to set a new one.",
 		"httpsRequired": "This page is opened over plain HTTP, so signing in will not work. Open the address that starts with https://."
 	},
+	"welcome": {
+		"title": "Choose your password",
+		"hint": "You signed in with a password someone else knows (for example, from the server log). Set your own to continue.",
+		"current": "Password you signed in with",
+		"submit": "Save and continue"
+	},
 	"roles": {
 		"owner": "Owner",
 		"mechanic": "Mechanic"
@@ -172,7 +178,9 @@
 		"invalid_movement_kind": "Unknown stock operation.",
 		"invalid_filter": "Unknown filter.",
 		"invalid_condition": "Choose new or used.",
-		"cannot_reset_own_password": "Change your own password on the account page."
+		"cannot_reset_own_password": "Change your own password on the account page.",
+		"password_unchanged": "The new password must be different from the current one.",
+		"password_change_required": "Set your own password first."
 	},
 	"units": {
 		"km": "km",

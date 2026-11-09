@@ -14,6 +14,9 @@ pub enum AppError {
     Unauthorized,
     #[error("forbidden")]
     Forbidden,
+    /// Signed in with a password that must be replaced first.
+    #[error("password_change_required")]
+    PasswordChangeRequired,
     #[error("not_found")]
     NotFound,
     #[error("invalid_credentials")]
@@ -42,7 +45,7 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = match &self {
             AppError::Unauthorized | AppError::InvalidCredentials => StatusCode::UNAUTHORIZED,
-            AppError::Forbidden => StatusCode::FORBIDDEN,
+            AppError::Forbidden | AppError::PasswordChangeRequired => StatusCode::FORBIDDEN,
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::TooManyAttempts { .. } => StatusCode::TOO_MANY_REQUESTS,
             AppError::Validation(_) => StatusCode::UNPROCESSABLE_ENTITY,

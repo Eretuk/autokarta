@@ -50,6 +50,13 @@ export async function api<T>(method: Method, path: string, body?: unknown): Prom
 	const retry = Number(res.headers.get('Retry-After'));
 	const err = new ApiError(res.status, code, Number.isFinite(retry) && retry > 0 ? retry : undefined);
 
+	// The session belongs to someone who has to set a new password first.
+	if (res.status === 403 && code === 'password_change_required') {
+		const here = location.pathname + location.search;
+		goto(here === '/' ? '/welcome' : `/welcome?next=${encodeURIComponent(here)}`, {
+			replaceState: true
+		});
+	}
 	// A failed login is also a 401, but it must not redirect anywhere.
 	if (res.status === 401 && path !== '/auth/login' && path !== '/auth/me') {
 		onUnauthorized?.();

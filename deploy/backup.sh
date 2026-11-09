@@ -1,10 +1,16 @@
 #!/bin/sh
-# Daily pg_dump with rotation. Runs inside the postgres image (see docker-compose.yml).
+# Daily pg_dump with rotation. Built into the app image as `autokarta-backup`
+# and run by the "backup" service in docker-compose.yml.
 #
-# Dumps land in ./backups on the host. This protects against mistakes and a
-# broken database, NOT against losing the server: copy ./backups off-site too
-# (see README, "Backups").
+# Dumps land in <DATA_DIR>/backups on the host. This protects against
+# mistakes and a broken database, NOT against losing the server: copy the
+# dumps off-site too (see README, "Backups").
 set -eu
+
+if [ ! -w /backups ]; then
+	echo "backup: /backups is not writable; mount a host directory there" >&2
+	exit 1
+fi
 
 : "${BACKUP_KEEP_DAYS:=14}"
 : "${BACKUP_TIME:=03:30}"

@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit';
-import { loadSession } from '$lib/session.svelte';
+import { loadSession, welcomeUrl } from '$lib/session.svelte';
 import { loadBusinessSettings } from '$lib/settings.svelte';
 import type { LayoutLoad } from './$types';
 
@@ -10,6 +10,7 @@ export const load: LayoutLoad = async ({ url }) => {
 		const next = url.pathname + url.search;
 		redirect(307, next === '/' ? '/login' : `/login?next=${encodeURIComponent(next)}`);
 	}
+	if (user.must_change_password) redirect(307, welcomeUrl(url.pathname + url.search));
 	await loadBusinessSettings();
 	return { user };
 };

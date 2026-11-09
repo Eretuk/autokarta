@@ -40,7 +40,6 @@ git clone https://github.com/Eretuk/autokarta.git && cd autokarta
 cp .env.dev.example .env                          # dev settings, work as they are
 docker compose -f docker-compose.dev.yml up -d   # PostgreSQL 18 on localhost:5432
 cd backend
-cargo run -- create-admin --username owner        # asks for a password (min. 8 characters)
 cargo run                                         # API on http://localhost:8080
 ```
 
@@ -52,8 +51,10 @@ npm install
 npm run dev            # http://localhost:5173, proxies /api to :8080
 ```
 
-Open http://localhost:5173 and sign in as `owner`. The backend finds `.env`
-in the repository root by itself. Database files live in `./.data/` (ignored
+On the first start with an empty database the backend creates the owner
+`autokarta_admin` and prints its password in the log. Open
+http://localhost:5173, sign in with it and choose your own password. The
+backend finds `.env` in the repository root by itself. Database files live in `./.data/` (ignored
 by git): to start from an empty database, run
 `docker compose -f docker-compose.dev.yml down`, delete `.data/db` and start
 again.
@@ -114,7 +115,6 @@ Everything lives in one directory, `/opt/docker/autokarta` in this guide
 /opt/docker/autokarta/
 ├── docker-compose.yml
 ├── .env                 all settings (template: .env.example)
-├── deploy/backup.sh     daily dump script
 ├── db/                  PostgreSQL files, created on first start
 └── backups/             daily dumps, created on first start
 ```
@@ -124,13 +124,12 @@ also live on another disk.
 
 ### Install
 
-1. Download three files:
+1. Download two files:
 
    ```bash
-   sudo mkdir -p /opt/docker/autokarta/deploy && cd /opt/docker/autokarta
+   sudo mkdir -p /opt/docker/autokarta && cd /opt/docker/autokarta
    base=https://raw.githubusercontent.com/Eretuk/autokarta/main
    sudo curl -fsSLO $base/docker-compose.yml
-   sudo curl -fsSL -o deploy/backup.sh $base/deploy/backup.sh
    sudo curl -fsSL -o .env $base/.env.example
    sudo chmod 600 .env
    ```
@@ -143,7 +142,10 @@ also live on another disk.
      `0.0.0.0:8080` for every interface); a proxy on this server outside
      Docker uses `127.0.0.1:8080`. Do not expose the port to the internet:
      ports published by Docker bypass ufw/firewalld on the same host;
-   - `DATA_DIR`: `/opt/docker/autokarta` for the layout above.
+   - `DATA_DIR`: `/opt/docker/autokarta` for the layout above;
+   - `COMPOSE_PROFILES`: keep `backup` for daily dumps into
+     `<DATA_DIR>/backups`, or leave it empty if the database is backed up
+     another way (see "Backups").
 
    A missing value stops `docker compose` with a message naming it.
    `POSTGRES_USER`, `POSTGRES_DB` and `POSTGRES_PASSWORD` are applied only
@@ -154,17 +156,19 @@ also live on another disk.
    ```bash
    docker compose pull
    docker compose up -d
-   docker compose ps                         # db, app and backup are "Up"
+   docker compose ps                         # db, app (and backup) are "Up"
    curl http://127.0.0.1:8080/api/health     # {"status":"ok",...}; use your APP_BIND address
-   docker compose logs -f app                # if something is wrong
    ```
 
-4. Create the first owner (run it in an interactive terminal; it asks for a
-   password, at least 8 characters):
+4. Read the first owner's password. On the first start the app creates the
+   owner `autokarta_admin` with a random password and prints it once:
 
    ```bash
-   docker compose exec app autokarta create-admin --username owner
+   docker compose logs app | grep -A3 "First start"
    ```
+
+   Signing in with it asks for a new password right away, so the one in the
+   log stops working. If something is wrong: `docker compose logs -f app`.
 
 5. Point the reverse proxy at `APP_BIND`. It only terminates TLS; the app sets
    its own security headers. Caddy (here the proxy is another machine and the
@@ -187,9 +191,9 @@ also live on another disk.
    }
    ```
 
-6. Open `https://<your domain>`, sign in as the owner, set the currency and
-   distance unit on the account page, and add staff accounts on the staff
-   page. On a phone the app can be installed to the home screen.
+6. Open `https://<your domain>`, sign in as `autokarta_admin`, choose your
+   password, set your name, the currency and the distance unit on the account
+   page, and add staff accounts on the staff page. On a phone the app can be installed to the home screen.
 
 If the image is private (a fork, for example), log in to the registry once
 before `docker compose pull`, with a GitHub personal access token (classic)
@@ -201,7 +205,7 @@ that has the `read:packages` scope:
 Set the new version in `AUTOKARTA_IMAGE` in `.env` (or keep `latest`), then:
 
 ```bash
-docker compose pull app && docker compose up -d app
+docker compose pull && docker compose up -d
 ```
 
 Database migrations run automatically when the app starts. When
@@ -212,8 +216,9 @@ of pulling it (e.g. on ARM), keep the whole repository there and run
 
 ### Lost owner password
 
-Create another owner from the server, sign in with it and set a new password
-for the old account on the staff page:
+Create another owner from the server (it asks for a password, at least 8
+characters), sign in with it and set a new password for the old account on
+the staff page:
 
 ```bash
 docker compose exec app autokarta create-admin --username rescue
@@ -227,9 +232,13 @@ and restore (or `pg_upgrade`). Deleting `<DATA_DIR>/db` deletes all data.
 
 ### Backups
 
-The `backup` service writes a `pg_dump` to `<DATA_DIR>/backups` every day
-(`BACKUP_TIME`, container time is UTC) and keeps `BACKUP_KEEP_DAYS` days.
+With `COMPOSE_PROFILES=backup` in `.env`, the `backup` service (the same
+image, with `pg_dump` 18 inside) writes a dump to `<DATA_DIR>/backups` every
+day (`BACKUP_TIME`, container time is UTC) and keeps `BACKUP_KEEP_DAYS` days.
 Run one immediately: `docker compose run --rm backup now`.
+
+If you back up databases centrally instead, leave `COMPOSE_PROFILES` empty
+and point your tool at the `db` service (user and database from `.env`).
 
 Local dumps do not survive losing the server: **copy `<DATA_DIR>/backups`
 off-site** (e.g. a nightly `rclone sync` or `restic` from the host) before

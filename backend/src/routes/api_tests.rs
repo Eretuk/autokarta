@@ -46,6 +46,10 @@ impl Api {
     }
 
     async fn login(&self, username: &str) -> Session {
+        self.login_with(username, "password-123").await
+    }
+
+    async fn login_with(&self, username: &str, password: &str) -> Session {
         let res = self
             .app
             .clone()
@@ -53,7 +57,7 @@ impl Api {
                 Request::post("/api/auth/login")
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(Body::from(
-                        json!({"username": username, "password": "password-123"}).to_string(),
+                        json!({"username": username, "password": password}).to_string(),
                     ))
                     .unwrap(),
             )
@@ -95,6 +99,56 @@ impl Api {
 
 fn s(v: &Value) -> &str {
     v.as_str().unwrap()
+}
+
+#[sqlx::test]
+async fn first_start_creates_owner_who_must_change_password(db: PgPool) {
+    let password = auth::create_first_owner(&db).await.unwrap().unwrap();
+    // Only the very first start: any account means nothing is created.
+    assert!(auth::create_first_owner(&db).await.unwrap().is_none());
+
+    let api = Api::new(db).await;
+    let admin = api.login_with(auth::FIRST_OWNER, &password).await;
+
+    let (st, me) = api.call(&admin, "GET", "/api/auth/me", None).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(
+        (s(&me["role"]), me["must_change_password"].as_bool()),
+        ("owner", Some(true))
+    );
+
+    // Everything else waits for a new password.
+    for (method, uri) in [
+        ("GET", "/api/vehicles"),
+        ("GET", "/api/users"),
+        ("PATCH", "/api/auth/me"),
+    ] {
+        let body = (method == "PATCH").then(|| json!({"locale": "ru"}));
+        let (st, err) = api.call(&admin, method, uri, body).await;
+        assert_eq!(
+            (st, s(&err["error"])),
+            (StatusCode::FORBIDDEN, "password_change_required"),
+            "{uri}"
+        );
+    }
+    let same = json!({"current_password": password, "new_password": password});
+    let (st, err) = api
+        .call(&admin, "POST", "/api/auth/password", Some(same))
+        .await;
+    assert_eq!(
+        (st, s(&err["error"])),
+        (StatusCode::UNPROCESSABLE_ENTITY, "password_unchanged")
+    );
+
+    let change = json!({"current_password": password, "new_password": "my-own-pass-1"});
+    let (st, _) = api
+        .call(&admin, "POST", "/api/auth/password", Some(change))
+        .await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    let (_, me) = api.call(&admin, "GET", "/api/auth/me", None).await;
+    assert_eq!(me["must_change_password"].as_bool(), Some(false));
+    let (st, _) = api.call(&admin, "GET", "/api/users", None).await;
+    assert_eq!(st, StatusCode::OK);
 }
 
 #[sqlx::test]
