@@ -69,9 +69,11 @@ cd frontend && npm run check && npm run build
 `cargo test` needs the dev database running: each API test creates its own
 throwaway database there.
 
-Releases: tag a commit on `main` with `v<major>.<minor>.<patch>` (the
-version in `backend/Cargo.toml`) and push the tag; CI publishes the image
-with that version.
+Releases: set the new version in `backend/Cargo.toml`,
+`frontend/package.json` (`npm version <x.y.z> --no-git-tag-version`) and the
+`x-image` line of `docker-compose.yml` (CI fails if they differ), merge, then
+tag `main` with `v<x.y.z>` and push the tag. CI publishes the image and a
+GitHub Release with `docker-compose.yml` and `.env.example` attached.
 
 ### Testing on a phone
 
@@ -123,11 +125,12 @@ also live on another disk.
 
 ### Install
 
-1. Download two files:
+1. Download two files from the latest release (the compose file pins the
+   matching app version):
 
    ```bash
    sudo mkdir -p /opt/docker/autokarta && cd /opt/docker/autokarta
-   base=https://raw.githubusercontent.com/Eretuk/autokarta/main
+   base=https://github.com/Eretuk/autokarta/releases/latest/download
    sudo curl -fsSLO $base/docker-compose.yml
    sudo curl -fsSL -o .env $base/.env.example
    sudo chmod 600 .env
@@ -201,15 +204,18 @@ that has the `read:packages` scope:
 
 ### Update
 
-Set the new version in `AUTOKARTA_IMAGE` in `.env` (or keep `latest`), then:
+The app version is pinned in `docker-compose.yml` (the `x-image` line at the
+top), so `.env` stays untouched, even when it is kept encrypted. Take the
+compose file of the new release (or only change the version in that line):
 
 ```bash
+cd /opt/docker/autokarta
+sudo curl -fsSLO https://github.com/Eretuk/autokarta/releases/latest/download/docker-compose.yml
 docker compose pull && docker compose up -d
 ```
 
-Database migrations run automatically when the app starts. When
-`docker-compose.yml` or `.env.example` change in a release, download them
-again and compare with your `.env`. To build the image on the server instead
+Database migrations run automatically when the app starts. Release notes
+(GitHub Releases) say when `.env.example` gained a new setting. To build the image on the server instead
 of pulling it, keep the whole repository there and run
 `docker compose up -d --build`.
 

@@ -36,6 +36,16 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v7
+      # One version everywhere; a release tag must match it as well.
+      - name: Versions match
+        working-directory: ${{ github.workspace }}
+        run: |
+          cargo=$(sed -n 's/^version = "\(.*\)"$/\1/p' backend/Cargo.toml | head -n1)
+          npm=$(node -p "require('./frontend/package.json').version")
+          compose=$(sed -n 's/^x-image: &image .*:\(.*\)$/\1/p' docker-compose.yml)
+          echo "Cargo.toml $cargo, package.json $npm, docker-compose.yml $compose, ref $GITHUB_REF_NAME"
+          [ "$cargo" = "$npm" ] && [ "$cargo" = "$compose" ]
+          if [ "$GITHUB_REF_TYPE" = tag ]; then [ "$GITHUB_REF_NAME" = "v$cargo" ]; fi
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -162,3 +172,21 @@ jobs:
             $(printf "$IMAGE@sha256:%s " *)
       - name: Inspect
         run: docker buildx imagetools inspect "$IMAGE:${{ steps.meta.outputs.version }}"
+
+  # A version tag becomes a GitHub Release carrying the files the server
+  # needs, so `releases/latest/download/docker-compose.yml` always matches
+  # the newest image.
+  release:
+    if: github.ref_type == 'tag'
+    needs: [docker-merge]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" docker-compose.yml .env.example \
+            --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
