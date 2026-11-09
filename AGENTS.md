@@ -194,7 +194,10 @@ an external reverse proxy that terminates TLS and forwards to `APP_BIND`),
 `deploy/backup.sh` (daily `pg_dump` into `./backups` with rotation).
 CI pushes the image to `ghcr.io/eretuk/autokarta` (only ghcr.io, never Docker
 Hub) from `main` (`latest`, `sha-*`) and `v*` tags; the server pulls it via
-`AUTOKARTA_IMAGE`. PostgreSQL 18 volume is mounted at `/var/lib/postgresql`.
+`AUTOKARTA_IMAGE`. No Docker volumes: production data is bind-mounted from
+`DATA_DIR` (`db/` at `/var/lib/postgresql`, `backups/`), dev data from
+`./.data/`. Every compose value comes from `.env` (`.env.example` for
+production, `.env.dev.example` for development) and is required (`:?`).
 Security headers (Referrer-Policy, nosniff, frame deny, Permissions-Policy,
 HSTS when `COOKIE_SECURE`) are set by the backend, never only in a proxy.
 Dev HTTPS for phones: `docker-compose.dev.yml --profile https` (Caddy with
@@ -297,7 +300,7 @@ Offline mode is explicitly **out of scope** for the first versions.
 ## 9. Local development
 
 ```bash
-cp .env.example .env
+cp .env.dev.example .env
 docker compose -f docker-compose.dev.yml up -d
 cd backend
 cargo run -- create-admin --username owner

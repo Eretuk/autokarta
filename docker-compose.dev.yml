@@ -1,43 +1,41 @@
-# Local development database only. Production stack: docker-compose.yml.
-# Start: docker compose -f docker-compose.dev.yml up -d
-# Separate project name, so it never shares containers or volumes with the
-# production stack in docker-compose.yml.
+# Local development only. Production stack: docker-compose.yml.
+# Settings come from .env in the repository root (template: .env.dev.example).
+#   docker compose -f docker-compose.dev.yml up -d                    # PostgreSQL
+#   docker compose -f docker-compose.dev.yml --profile https up -d    # + HTTPS for phones
+# Data lives in ./.data/ (ignored by git); stop the stack and delete it to
+# start from an empty database. Separate project name, so it never shares
+# containers with the production stack.
 name: autokarta-dev
 
 services:
   db:
     image: postgres:18-alpine
     environment:
-      POSTGRES_USER: autokarta
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
-      POSTGRES_DB: autokarta
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      # PostgreSQL 18+ images keep data in /var/lib/postgresql/<major>/docker,
-      # so the volume is mounted one level up (lets pg_upgrade work in place).
-      - postgres:/var/lib/postgresql
+      - ./.data/db:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U autokarta"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       retries: 10
 
-  # HTTPS for testing on a phone in the local network (camera needs it).
-  # Start: docker compose -f docker-compose.dev.yml --profile https up -d
-  # Then open https://<LAN_HOST>:8443 (Vite must run with `npm run dev -- --host`).
+  # HTTPS for testing on a phone in the local network (the camera needs it).
+  # Open https://<LAN_HOST>:8443; Vite must run with `npm run dev -- --host`.
   caddy:
     image: caddy:2-alpine
     profiles: ["https"]
     environment:
-      LAN_HOST: ${LAN_HOST:-localhost}
+      LAN_HOST: ${LAN_HOST:?set LAN_HOST in .env}
     ports:
       - "8443:8443"
     volumes:
       - ./deploy/Caddyfile.dev:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
+      # Caddy's local certificate authority: kept, so a phone that trusts it
+      # once keeps trusting it.
+      - ./.data/caddy:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
-volumes:
-  postgres:
-  caddy_data:

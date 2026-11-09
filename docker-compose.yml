@@ -1,45 +1,48 @@
-# Production: app + PostgreSQL + daily backups.
-# HTTPS is terminated by an external reverse proxy that forwards to APP_BIND
-# (default 127.0.0.1:8080).
-# The server needs only this file, deploy/backup.sh and .env.
-#   cp .env.example .env   # set POSTGRES_PASSWORD and AUTOKARTA_IMAGE
-#   docker compose pull && docker compose up -d
-#   docker compose exec app autokarta create-admin --username owner
-# Update: docker compose pull app && docker compose up -d app
-# Build locally instead of pulling: docker compose up -d --build
+# Production: app + PostgreSQL + daily backups. Every setting comes from .env
+# next to this file (template: .env.example); a missing one stops `docker
+# compose` with a message naming it. HTTPS is terminated by an external
+# reverse proxy that forwards to APP_BIND. Setup: README, "Production".
 name: autokarta
+
+# How every service reaches the database.
+x-database: &database
+  PGHOST: db
+  PGUSER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+  PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+  PGDATABASE: ${POSTGRES_DB:?set POSTGRES_DB in .env}
 
 services:
   db:
     image: postgres:18-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: autokarta
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-      POSTGRES_DB: autokarta
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      # PostgreSQL 18+ images keep data in /var/lib/postgresql/<major>/docker,
-      # so the volume is mounted one level up (lets pg_upgrade work in place).
-      - postgres:/var/lib/postgresql
+      # PostgreSQL 18+ keeps its files in <dir>/18/docker, so a future major
+      # version can be upgraded next to it in the same directory.
+      - ${DATA_DIR:?set DATA_DIR in .env}/db:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U autokarta -d autokarta"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       retries: 10
 
   app:
     # Published by CI to ghcr.io; `build` is used only with --build.
-    image: ${AUTOKARTA_IMAGE:-autokarta:latest}
+    image: ${AUTOKARTA_IMAGE:?set AUTOKARTA_IMAGE in .env}
     build: .
     restart: unless-stopped
     environment:
-      # The password goes separately, not inside the URL, so any characters
-      # in it work (a "/" or "+" in the URL breaks parsing).
-      DATABASE_URL: postgres://autokarta@db:5432/autokarta
-      PGPASSWORD: ${POSTGRES_PASSWORD}
+      <<: *database
+      # Only the host here: user, password and database come from the PG*
+      # variables above, so any characters in the password work (a "/" or
+      # "+" inside a URL breaks parsing).
+      DATABASE_URL: postgres://db:5432
       # Always true in production: the browser talks HTTPS to the proxy.
       COOKIE_SECURE: "true"
     ports:
-      - "${APP_BIND:-127.0.0.1:8080}:8080"
+      - "${APP_BIND:?set APP_BIND in .env}:8080"
     depends_on:
       db:
         condition: service_healthy
@@ -48,19 +51,13 @@ services:
     image: postgres:18-alpine
     restart: unless-stopped
     environment:
-      PGHOST: db
-      PGUSER: autokarta
-      PGPASSWORD: ${POSTGRES_PASSWORD}
-      PGDATABASE: autokarta
-      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
-      BACKUP_TIME: ${BACKUP_TIME:-03:30}
+      <<: *database
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:?set BACKUP_KEEP_DAYS in .env}
+      BACKUP_TIME: ${BACKUP_TIME:?set BACKUP_TIME in .env}
     volumes:
       - ./deploy/backup.sh:/backup.sh:ro
-      - ./backups:/backups
+      - ${DATA_DIR}/backups:/backups
     entrypoint: ["/bin/sh", "/backup.sh"]
     depends_on:
       db:
         condition: service_healthy
-
-volumes:
-  postgres:
