@@ -9,7 +9,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{
-    auth::{self, CurrentUser, SESSION_COOKIE},
+    auth::{self, CurrentUser, SignedIn, SESSION_COOKIE},
     error::{AppError, AppResult},
     state::AppState,
     validate,
@@ -82,7 +82,7 @@ async fn logout(
     Ok((jar.remove(auth::removal_cookie()), StatusCode::NO_CONTENT))
 }
 
-async fn me(user: CurrentUser) -> Json<CurrentUser> {
+async fn me(SignedIn(user): SignedIn) -> Json<CurrentUser> {
     Json(user)
 }
 
@@ -135,10 +135,14 @@ struct ChangePassword {
 async fn change_password(
     State(state): State<AppState>,
     jar: CookieJar,
-    user: CurrentUser,
+    SignedIn(user): SignedIn,
     Json(req): Json<ChangePassword>,
 ) -> AppResult<StatusCode> {
     validate::password(&req.new_password).map_err(AppError::Validation)?;
+    // Keeping a password someone else knows is not a change.
+    if req.new_password == req.current_password {
+        return Err(AppError::Validation("password_unchanged"));
+    }
 
     let hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1")
         .bind(user.id)
@@ -155,11 +159,14 @@ async fn change_password(
         .unwrap_or_default();
 
     let mut tx = state.db.begin().await?;
-    sqlx::query("UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1")
-        .bind(user.id)
-        .bind(new_hash)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE users SET password_hash = $2, must_change_password = false, updated_at = now()
+          WHERE id = $1",
+    )
+    .bind(user.id)
+    .bind(new_hash)
+    .execute(&mut *tx)
+    .await?;
     sqlx::query(
         "DELETE FROM sessions WHERE user_id = $1 AND token_hash <> sha256($2::text::bytea)",
     )
@@ -174,7 +181,7 @@ async fn change_password(
 
 pub(super) async fn load_user(state: &AppState, id: Uuid) -> AppResult<CurrentUser> {
     sqlx::query_as::<_, CurrentUser>(
-        "SELECT id, username, display_name, role, locale FROM users WHERE id = $1",
+        "SELECT id, username, display_name, role, locale, must_change_password FROM users WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(&state.db)

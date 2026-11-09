@@ -1,7 +1,8 @@
-# Production: app + PostgreSQL + daily backups. Every setting comes from .env
-# next to this file (template: .env.example); a missing one stops `docker
-# compose` with a message naming it. HTTPS is terminated by an external
-# reverse proxy that forwards to APP_BIND. Setup: README, "Production".
+# Production: app + PostgreSQL (+ optional daily backups). This file and .env
+# next to it (template: .env.example) are all the server needs. Every setting
+# comes from .env; a missing one stops `docker compose` with a message naming
+# it. HTTPS is terminated by an external reverse proxy that forwards to
+# APP_BIND. Setup: README, "Production".
 name: autokarta
 
 # How every service reaches the database.
@@ -47,17 +48,21 @@ services:
       db:
         condition: service_healthy
 
+  # Daily pg_dump into <DATA_DIR>/backups. Enabled by COMPOSE_PROFILES=backup
+  # in .env; leave it out when the databases are backed up centrally.
   backup:
-    image: postgres:18-alpine
+    image: ${AUTOKARTA_IMAGE}
+    profiles: ["backup"]
     restart: unless-stopped
+    # Root only to write into <DATA_DIR>/backups, which Docker creates as root.
+    user: root
+    entrypoint: ["autokarta-backup"]
     environment:
       <<: *database
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:?set BACKUP_KEEP_DAYS in .env}
       BACKUP_TIME: ${BACKUP_TIME:?set BACKUP_TIME in .env}
     volumes:
-      - ./deploy/backup.sh:/backup.sh:ro
       - ${DATA_DIR}/backups:/backups
-    entrypoint: ["/bin/sh", "/backup.sh"]
     depends_on:
       db:
         condition: service_healthy

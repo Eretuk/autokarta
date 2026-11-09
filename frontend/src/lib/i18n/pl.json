@@ -26,6 +26,12 @@
 		"forgot": "Nie pamiętasz hasła? Poproś właściciela o ustawienie nowego.",
 		"httpsRequired": "Strona jest otwarta przez zwykłe HTTP, więc logowanie nie zadziała. Otwórz adres zaczynający się od https://."
 	},
+	"welcome": {
+		"title": "Ustaw swoje hasło",
+		"hint": "Zalogowano hasłem, które zna ktoś inny (na przykład z logu serwera). Ustaw własne, aby kontynuować.",
+		"current": "Hasło, którym się zalogowano",
+		"submit": "Zapisz i kontynuuj"
+	},
 	"roles": {
 		"owner": "Właściciel",
 		"mechanic": "Mechanik"
@@ -176,7 +182,9 @@
 		"invalid_movement_kind": "Nieznana operacja magazynowa.",
 		"invalid_filter": "Nieznany filtr.",
 		"invalid_condition": "Wybierz: nowa lub używana.",
-		"cannot_reset_own_password": "Własne hasło zmienisz na stronie konta."
+		"cannot_reset_own_password": "Własne hasło zmienisz na stronie konta.",
+		"password_unchanged": "Nowe hasło musi się różnić od obecnego.",
+		"password_change_required": "Najpierw ustaw własne hasło."
 	},
 	"units": {
 		"km": "km",

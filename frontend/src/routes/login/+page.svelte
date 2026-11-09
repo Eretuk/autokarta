@@ -6,7 +6,13 @@
 	import Wordmark from '$lib/components/Wordmark.svelte';
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
 	import { i18n, LOCALE_NAMES, LOCALES, setLocale, t, type Locale } from '$lib/i18n/index.svelte';
-	import { loadSession, setUser, type User } from '$lib/session.svelte';
+	import {
+		loadSession,
+		rememberLoginPassword,
+		setUser,
+		welcomeUrl,
+		type User
+	} from '$lib/session.svelte';
 
 	let username = $state('');
 	let password = $state('');
@@ -30,8 +36,14 @@
 		busy = true;
 		error = '';
 		try {
-			setUser(await api<User>('POST', '/auth/login', { username, password }));
-			await goto(next, { replaceState: true });
+			const user = await api<User>('POST', '/auth/login', { username, password });
+			setUser(user);
+			if (user.must_change_password) {
+				rememberLoginPassword(password);
+				await goto(welcomeUrl(next), { replaceState: true });
+			} else {
+				await goto(next, { replaceState: true });
+			}
 		} catch (err) {
 			error = errorMessage(err);
 			password = '';

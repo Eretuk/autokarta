@@ -139,6 +139,58 @@ pub async fn cleanup_expired_sessions(db: sqlx::PgPool) {
     }
 }
 
+// ---------- first start ----------
+
+pub const FIRST_OWNER: &str = "autokarta_admin";
+
+/// On the very first start (no accounts at all) creates the owner
+/// [`FIRST_OWNER`] with a random password and returns that password, so it can
+/// be printed once. The account must replace it on first sign-in. Returns
+/// `None` when any account exists, so it never runs again.
+pub async fn create_first_owner(db: &sqlx::PgPool) -> anyhow::Result<Option<String>> {
+    let mut tx = db.begin().await?;
+    // Two instances starting together must not both create an owner.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('autokarta_first_owner'))")
+        .execute(&mut *tx)
+        .await?;
+    let any: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM users)")
+        .fetch_one(&mut *tx)
+        .await?;
+    if any {
+        return Ok(None);
+    }
+
+    let password = generate_password();
+    let hash = hash_password(password.clone()).await?;
+    sqlx::query(
+        "INSERT INTO users (username, display_name, role, password_hash, must_change_password)
+         VALUES ($1, 'Admin', 'owner', $2, true)",
+    )
+    .bind(FIRST_OWNER)
+    .bind(hash)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(Some(password))
+}
+
+/// 25 random characters in groups of five (125 bits), from an alphabet without
+/// look-alikes (no i, l, o, u), easy to type from a log on a phone.
+fn generate_password() -> String {
+    const ALPHABET: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
+    let mut bytes = [0u8; 25];
+    OsRng.fill_bytes(&mut bytes);
+    let chars: Vec<char> = bytes
+        .iter()
+        .map(|b| ALPHABET[(b & 31) as usize] as char)
+        .collect();
+    chars
+        .chunks(5)
+        .map(|c| c.iter().collect::<String>())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
 // ---------- current user extractors ----------
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -148,6 +200,7 @@ pub struct CurrentUser {
     pub display_name: String,
     pub role: String,
     pub locale: String,
+    pub must_change_password: bool,
 }
 
 impl CurrentUser {
@@ -156,7 +209,12 @@ impl CurrentUser {
     }
 }
 
-impl FromRequestParts<AppState> for CurrentUser {
+/// Any signed-in user, including one who still has to replace a password
+/// someone else knows. Only for signing out, reading yourself and changing
+/// the password; everything else takes [`CurrentUser`].
+pub struct SignedIn(pub CurrentUser);
+
+impl FromRequestParts<AppState> for SignedIn {
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> AppResult<Self> {
@@ -168,7 +226,7 @@ impl FromRequestParts<AppState> for CurrentUser {
         let token_hash = hash_token(&token);
 
         let user = sqlx::query_as::<_, CurrentUser>(
-            "SELECT u.id, u.username, u.display_name, u.role, u.locale
+            "SELECT u.id, u.username, u.display_name, u.role, u.locale, u.must_change_password
                FROM sessions s JOIN users u ON u.id = s.user_id
               WHERE s.token_hash = $1 AND s.expires_at > now() AND u.is_active",
         )
@@ -186,6 +244,19 @@ impl FromRequestParts<AppState> for CurrentUser {
         .execute(&state.db)
         .await?;
 
+        Ok(SignedIn(user))
+    }
+}
+
+/// A signed-in user with a password of their own.
+impl FromRequestParts<AppState> for CurrentUser {
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> AppResult<Self> {
+        let SignedIn(user) = SignedIn::from_request_parts(parts, state).await?;
+        if user.must_change_password {
+            return Err(AppError::PasswordChangeRequired);
+        }
         Ok(user)
     }
 }
@@ -250,6 +321,18 @@ impl LoginLimiter {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn generated_passwords() {
+        let a = super::generate_password();
+        assert_eq!(a.len(), 29);
+        assert_eq!(a.split('-').count(), 5);
+        assert!(a
+            .chars()
+            .all(|c| c == '-' || "0123456789abcdefghjkmnpqrstvwxyz".contains(c)));
+        assert_ne!(a, super::generate_password());
+        assert!(crate::validate::password(&a).is_ok());
+    }
+
     use super::*;
 
     #[test]

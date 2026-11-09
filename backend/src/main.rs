@@ -53,7 +53,7 @@ struct ServeArgs {
 enum Command {
     /// Run the web server (default).
     Serve,
-    /// Create the first owner account. Prompts for a password.
+    /// Create an owner account (e.g. to regain access). Prompts for a password.
     CreateAdmin {
         #[arg(long)]
         username: String,
@@ -66,6 +66,9 @@ enum Command {
 async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
     tracing_subscriber::fmt()
+        // Colours only in a terminal; `docker compose logs` and log
+        // collectors get plain text.
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
         .with_env_filter(
             EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| EnvFilter::new("autokarta=info,tower_http=info")),
@@ -105,6 +108,9 @@ async fn serve(db: sqlx::PgPool, args: ServeArgs) -> anyhow::Result<()> {
         limiter: Arc::new(auth::LoginLimiter::default()),
     };
 
+    if let Some(password) = auth::create_first_owner(&state.db).await? {
+        print_first_owner(&password);
+    }
     tokio::spawn(auth::cleanup_expired_sessions(state.db.clone()));
 
     let static_dir = args
@@ -125,6 +131,24 @@ async fn serve(db: sqlx::PgPool, args: ServeArgs) -> anyhow::Result<()> {
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())
+}
+
+/// Printed once, on the start that created the account: the password is not
+/// stored anywhere else, and signing in with it asks for a new one at once.
+fn print_first_owner(password: &str) {
+    let lines = [
+        "First start: created the owner account.".to_string(),
+        format!("  username: {}", auth::FIRST_OWNER),
+        format!("  password: {password}"),
+        "Sign in and choose your own password; this one works only for that.".to_string(),
+        "It is shown only now. Lost it? Create another owner:".to_string(),
+        "  docker compose exec app autokarta create-admin --username <name>".to_string(),
+    ];
+    tracing::warn!("{}", "=".repeat(72));
+    for line in lines {
+        tracing::warn!("{line}");
+    }
+    tracing::warn!("{}", "=".repeat(72));
 }
 
 async fn create_admin(

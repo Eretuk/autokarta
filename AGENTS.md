@@ -104,7 +104,13 @@ rotation plus an off-site copy are a hard requirement before real data goes in.
 ## 4. What exists now
 
 `backend/` implements:
-- `autokarta create-admin --username <name>`: prompts for password, creates an owner.
+- First start (no accounts at all): `serve` creates the owner `autokarta_admin`
+  with a random password, prints it once in the log and sets
+  `must_change_password`; until that user changes the password, everything
+  except `GET /auth/me`, `POST /auth/password` and logout answers 403
+  `password_change_required` (extractor `SignedIn` vs `CurrentUser`), and the
+  frontend sends them to `/welcome`.
+- `autokarta create-admin --username <name>`: prompts for password, creates an owner (recovery).
 - `autokarta` / `autokarta serve`: HTTP server.
 - Migrations: `users` + `sessions`; vehicles, clients, ownership history,
   odometer readings, work orders + items, business settings; parts, barcodes,
@@ -125,7 +131,7 @@ API (all JSON, prefix `/api`):
 | POST | `/auth/logout` | staff | |
 | GET | `/auth/me` | staff | current user |
 | PATCH | `/auth/me` | staff | `{display_name?, locale?}` |
-| POST | `/auth/password` | staff | `{current_password, new_password}`; signs out other devices |
+| POST | `/auth/password` | staff | `{current_password, new_password}`; signs out other devices; clears `must_change_password`; `password_unchanged` if equal |
 | GET | `/users` | owner | list staff |
 | POST | `/users` | owner | `{username, display_name, role, password, locale?}` |
 | PATCH | `/users/{id}` | owner | `{display_name?, role?, is_active?}`; cannot demote/deactivate self |
@@ -191,7 +197,10 @@ not done yet. The backend sets `Cache-Control`: `immutable` for
 Deployment: `Dockerfile` (node build + cargo-chef + debian-slim, non-root),
 `docker-compose.yml` (db, app, backup; **no proxy**: production runs behind
 an external reverse proxy that terminates TLS and forwards to `APP_BIND`),
-`deploy/backup.sh` (daily `pg_dump` into `./backups` with rotation).
+`deploy/backup.sh` (daily `pg_dump` with rotation, built into the app image
+as `autokarta-backup` together with `pg_dump` 18; the `backup` service runs
+the app image and is enabled by `COMPOSE_PROFILES=backup`). The server needs
+only `docker-compose.yml` and `.env`.
 CI pushes the image to `ghcr.io/eretuk/autokarta` (only ghcr.io, never Docker
 Hub) from `main` (`latest`, `sha-*`) and `v*` tags; the server pulls it via
 `AUTOKARTA_IMAGE`. No Docker volumes: production data is bind-mounted from
@@ -303,8 +312,8 @@ Offline mode is explicitly **out of scope** for the first versions.
 cp .env.dev.example .env
 docker compose -f docker-compose.dev.yml up -d
 cd backend
-cargo run -- create-admin --username owner
-cargo run                      # http://localhost:8080/api/health
+cargo run                      # first start prints the autokarta_admin password
+                               # http://localhost:8080/api/health
 cargo test
 ```
 Frontend: `cd frontend && npm install && npm run dev` (http://localhost:5173,
