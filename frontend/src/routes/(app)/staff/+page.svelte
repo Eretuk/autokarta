@@ -252,15 +252,18 @@
 			<button class="btn primary block" type="submit" disabled={editBusy}>{t('common.saveChanges')}</button>
 		</form>
 
-		<form class="section" onsubmit={submitPassword}>
-			<h3>{t('staff.resetPassword')}</h3>
-			<p class="hint">{t('staff.resetPasswordHint')}</p>
-			{#if pwError}<div class="notice error" role="alert">{pwError}</div>{/if}
-			{#if pwDone}<div class="notice ok" role="status">{t('staff.passwordSet')}</div>{/if}
-			<label class="visually-hidden" for="reset-password">{t('account.newPassword')}</label>
-			<PasswordInput id="reset-password" bind:value={newPassword} autocomplete="new-password" />
-			<button class="btn block gap" type="submit" disabled={pwBusy}>{t('staff.setPassword')}</button>
-		</form>
+		<!-- Your own password: account page (asks for the current one). -->
+		{#if !isSelf}
+			<form class="section" onsubmit={submitPassword}>
+				<h3>{t('staff.resetPassword')}</h3>
+				<p class="hint">{t('staff.resetPasswordHint')}</p>
+				{#if pwError}<div class="notice error" role="alert">{pwError}</div>{/if}
+				{#if pwDone}<div class="notice ok" role="status">{t('staff.passwordSet')}</div>{/if}
+				<label class="visually-hidden" for="reset-password">{t('account.newPassword')}</label>
+				<PasswordInput id="reset-password" bind:value={newPassword} autocomplete="new-password" />
+				<button class="btn block gap" type="submit" disabled={pwBusy}>{t('staff.setPassword')}</button>
+			</form>
+		{/if}
 
 		{#if !isSelf}
 			<div class="section">

@@ -98,6 +98,74 @@ fn s(v: &Value) -> &str {
 }
 
 #[sqlx::test]
+async fn owner_resets_staff_password(db: PgPool) {
+    let api = Api::new(db).await;
+    let boss = api.login("boss").await;
+    let mech = api.login("mech").await;
+    let anon = Session("none=1".into());
+    let login = |password: &str| {
+        let body = json!({"username": "Mech", "password": password});
+        api.call(&anon, "POST", "/api/auth/login", Some(body))
+    };
+
+    let (_, me) = api.call(&mech, "GET", "/api/auth/me", None).await;
+    let mech_id = s(&me["id"]).to_string();
+    let (_, me) = api.call(&boss, "GET", "/api/auth/me", None).await;
+    let boss_id = s(&me["id"]).to_string();
+    let reset = |id: &str| format!("/api/users/{id}/password");
+
+    // The mechanic forgot the password and locked the account out.
+    for _ in 0..5 {
+        assert_eq!(login("wrong-guess").await.0, StatusCode::UNAUTHORIZED);
+    }
+    assert_eq!(login("password-123").await.0, StatusCode::TOO_MANY_REQUESTS);
+
+    // Only owners reset passwords, and the length rule still applies.
+    let body = json!({"password": "new-pass-456"});
+    let (st, _) = api
+        .call(&mech, "POST", &reset(&mech_id), Some(body.clone()))
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, err) = api
+        .call(
+            &boss,
+            "POST",
+            &reset(&mech_id),
+            Some(json!({"password": "short"})),
+        )
+        .await;
+    assert_eq!(
+        (st, s(&err["error"])),
+        (StatusCode::UNPROCESSABLE_ENTITY, "password_too_short")
+    );
+
+    // The reset signs the mechanic out everywhere and lifts the lockout.
+    let (st, _) = api
+        .call(&boss, "POST", &reset(&mech_id), Some(body.clone()))
+        .await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    let (st, _) = api.call(&mech, "GET", "/api/auth/me", None).await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+    assert_eq!(login("password-123").await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(login("new-pass-456").await.0, StatusCode::OK);
+
+    // Your own password needs the current one (account page), not a reset.
+    let (st, err) = api
+        .call(&boss, "POST", &reset(&boss_id), Some(body.clone()))
+        .await;
+    assert_eq!(
+        (st, s(&err["error"])),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "cannot_reset_own_password"
+        )
+    );
+    let unknown = reset("00000000-0000-0000-0000-000000000000");
+    let (st, _) = api.call(&boss, "POST", &unknown, Some(body)).await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test]
 async fn vehicle_search_and_identifiers(db: PgPool) {
     let api = Api::new(db).await;
     let mech = api.login("mech").await;

@@ -129,7 +129,7 @@ API (all JSON, prefix `/api`):
 | GET | `/users` | owner | list staff |
 | POST | `/users` | owner | `{username, display_name, role, password, locale?}` |
 | PATCH | `/users/{id}` | owner | `{display_name?, role?, is_active?}`; cannot demote/deactivate self |
-| POST | `/users/{id}/password` | owner | `{password}`; signs the user out everywhere |
+| POST | `/users/{id}/password` | owner | `{password}`; signs the user out everywhere and lifts a login lockout; not for yourself (`cannot_reset_own_password`) |
 | GET | `/settings` | staff | `{currency, distance_unit}` |
 | PATCH | `/settings` | owner | `{currency?, distance_unit?}` |
 | GET | `/clients?q=` | staff | search by name or phone |

@@ -14,6 +14,9 @@
 	let busy = $state(false);
 
 	const next = $derived(safeNext(page.url.searchParams.get('next')));
+	// Over plain HTTP (except localhost) the browser drops the Secure session
+	// cookie: sign-in "succeeds" and then bounces back here. Say why instead.
+	const insecure = typeof window !== 'undefined' && !window.isSecureContext;
 
 	// Already signed in (e.g. opened /login from history): go straight in.
 	onMount(() => {
@@ -45,6 +48,7 @@
 
 	<form class="card" onsubmit={submit}>
 		<h1>{t('login.title')}</h1>
+		{#if insecure}<div class="notice error" role="alert">{t('login.httpsRequired')}</div>{/if}
 		{#if error}<div class="notice error" role="alert">{error}</div>{/if}
 
 		<label class="field" for="username">
