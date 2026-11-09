@@ -157,30 +157,37 @@ struct ResetPassword {
 }
 
 /// Sets a new password for a staff member and signs them out everywhere.
+/// Also lifts a login lockout: a locked-out user is the usual reason to ask.
 async fn reset_password(
     State(state): State<AppState>,
-    _owner: Owner,
+    Owner(owner): Owner,
     Path(id): Path<Uuid>,
     Json(req): Json<ResetPassword>,
 ) -> AppResult<StatusCode> {
+    // Your own password is changed on the account page, which asks for the
+    // current one; a borrowed session must not be enough.
+    if id == owner.id {
+        return Err(AppError::Validation("cannot_reset_own_password"));
+    }
     validate::password(&req.password).map_err(AppError::Validation)?;
     let hash = auth::hash_password(req.password).await?;
 
     let mut tx = state.db.begin().await?;
-    let updated =
-        sqlx::query("UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1")
-            .bind(id)
-            .bind(hash)
-            .execute(&mut *tx)
-            .await?;
-    if updated.rows_affected() == 0 {
-        return Err(AppError::NotFound);
-    }
+    let username: String = sqlx::query_scalar(
+        "UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1
+         RETURNING lower(username)",
+    )
+    .bind(id)
+    .bind(hash)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(AppError::NotFound)?;
     sqlx::query("DELETE FROM sessions WHERE user_id = $1")
         .bind(id)
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
+    state.limiter.reset(&username);
 
     Ok(StatusCode::NO_CONTENT)
 }

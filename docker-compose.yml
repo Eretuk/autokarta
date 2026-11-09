@@ -32,7 +32,10 @@ services:
     build: .
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://autokarta:${POSTGRES_PASSWORD}@db:5432/autokarta
+      # The password goes separately, not inside the URL, so any characters
+      # in it work (a "/" or "+" in the URL breaks parsing).
+      DATABASE_URL: postgres://autokarta@db:5432/autokarta
+      PGPASSWORD: ${POSTGRES_PASSWORD}
       # Always true in production: the browser talks HTTPS to the proxy.
       COOKIE_SECURE: "true"
     ports:

@@ -23,7 +23,8 @@
 		"password": "Password",
 		"submit": "Sign in",
 		"signingIn": "Signing in…",
-		"forgot": "Forgot your password? Ask the owner to set a new one."
+		"forgot": "Forgot your password? Ask the owner to set a new one.",
+		"httpsRequired": "This page is opened over plain HTTP, so signing in will not work. Open the address that starts with https://."
 	},
 	"roles": {
 		"owner": "Owner",
@@ -170,7 +171,8 @@
 		"unknown_part": "This part no longer exists. Pick another one.",
 		"invalid_movement_kind": "Unknown stock operation.",
 		"invalid_filter": "Unknown filter.",
-		"invalid_condition": "Choose new or used."
+		"invalid_condition": "Choose new or used.",
+		"cannot_reset_own_password": "Change your own password on the account page."
 	},
 	"units": {
 		"km": "km",

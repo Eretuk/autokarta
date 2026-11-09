@@ -23,7 +23,8 @@
 		"password": "Hasło",
 		"submit": "Zaloguj się",
 		"signingIn": "Logowanie…",
-		"forgot": "Nie pamiętasz hasła? Poproś właściciela o ustawienie nowego."
+		"forgot": "Nie pamiętasz hasła? Poproś właściciela o ustawienie nowego.",
+		"httpsRequired": "Strona jest otwarta przez zwykłe HTTP, więc logowanie nie zadziała. Otwórz adres zaczynający się od https://."
 	},
 	"roles": {
 		"owner": "Właściciel",
@@ -174,7 +175,8 @@
 		"unknown_part": "Ta część już nie istnieje. Wybierz inną.",
 		"invalid_movement_kind": "Nieznana operacja magazynowa.",
 		"invalid_filter": "Nieznany filtr.",
-		"invalid_condition": "Wybierz: nowa lub używana."
+		"invalid_condition": "Wybierz: nowa lub używana.",
+		"cannot_reset_own_password": "Własne hasło zmienisz na stronie konta."
 	},
 	"units": {
 		"km": "km",
