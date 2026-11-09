@@ -89,7 +89,7 @@ app from a phone in the same Wi-Fi:
 
 ### What you need
 
-- A Linux server (x86-64 / amd64) with Docker Engine and the Docker Compose v2
+- A Linux server (x86-64 or ARM64) with Docker Engine and the Docker Compose v2
   plugin (`docker compose version` must work).
 - **An HTTPS address.** Sign-in cookies are `Secure` and the camera works only
   over HTTPS, so opening `http://<server-ip>:8080` will **not** let anyone sign
@@ -103,8 +103,7 @@ app from a phone in the same Wi-Fi:
 
 The image `ghcr.io/eretuk/autokarta` is built by CI on every commit to `main`
 (tags `latest`, `sha-<commit>`) and on version tags `v1.2.3` (tags `1.2.3`,
-`1.2`). It is built for amd64 only; on an ARM machine build it yourself (see
-"Update").
+`1.2`) for linux/amd64 and linux/arm64; Docker pulls the right one.
 
 ### Layout on the server
 
@@ -211,7 +210,7 @@ docker compose pull && docker compose up -d
 Database migrations run automatically when the app starts. When
 `docker-compose.yml` or `.env.example` change in a release, download them
 again and compare with your `.env`. To build the image on the server instead
-of pulling it (e.g. on ARM), keep the whole repository there and run
+of pulling it, keep the whole repository there and run
 `docker compose up -d --build`.
 
 ### Lost owner password

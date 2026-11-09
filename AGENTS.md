@@ -201,7 +201,8 @@ an external reverse proxy that terminates TLS and forwards to `APP_BIND`),
 as `autokarta-backup` together with `pg_dump` 18; the `backup` service runs
 the app image and is enabled by `COMPOSE_PROFILES=backup`). The server needs
 only `docker-compose.yml` and `.env`.
-CI pushes the image to `ghcr.io/eretuk/autokarta` (only ghcr.io, never Docker
+CI builds the image for linux/amd64 and linux/arm64 on native runners and
+pushes one multi-arch tag to `ghcr.io/eretuk/autokarta` (only ghcr.io, never Docker
 Hub) from `main` (`latest`, `sha-*`) and `v*` tags; the server pulls it via
 `AUTOKARTA_IMAGE`. No Docker volumes: production data is bind-mounted from
 `DATA_DIR` (`db/` at `/var/lib/postgresql`, `backups/`), dev data from
