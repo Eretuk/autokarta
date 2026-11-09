@@ -5,7 +5,7 @@
 #
 # The certificate comes from Caddy's own local CA. Either accept the browser
 # warning once, or install the root certificate on the phone:
-#   docker compose -f docker-compose.dev.yml cp caddy:/data/caddy/pki/authorities/local/root.crt .
+#   .data/caddy/caddy/pki/authorities/local/root.crt
 
 {
 	# Browsers send no SNI when the address is an IP, so tell Caddy which
