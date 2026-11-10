@@ -1,9 +1,15 @@
 # Production: app + PostgreSQL (+ optional daily backups). This file and .env
-# next to it (template: .env.example) are all the server needs. Every setting
-# comes from .env; a missing one stops `docker compose` with a message naming
-# it. HTTPS is terminated by an external reverse proxy that forwards to
-# APP_BIND. Setup: README, "Production".
+# next to it (template: .env.example) are all the server needs. The app
+# version is pinned here; settings and secrets come from .env, and a missing
+# one stops `docker compose` with a message naming it. HTTPS is terminated by
+# an external reverse proxy that forwards to APP_BIND. Setup: README,
+# "Production". Every release attaches the matching copy of this file.
 name: autokarta
+
+# The app version. Not a secret, so it lives here and not in .env (which is
+# often kept encrypted): to update, change it or download this file again from
+# the new release. CI checks it against the release tag.
+x-image: &image ghcr.io/eretuk/autokarta:0.2.2
 
 # How every service reaches the database.
 x-database: &database
@@ -31,7 +37,7 @@ services:
 
   app:
     # Published by CI to ghcr.io; `build` is used only with --build.
-    image: ${AUTOKARTA_IMAGE:?set AUTOKARTA_IMAGE in .env}
+    image: *image
     build: .
     restart: unless-stopped
     environment:
@@ -51,7 +57,7 @@ services:
   # Daily pg_dump into <DATA_DIR>/backups. Enabled by COMPOSE_PROFILES=backup
   # in .env; leave it out when the databases are backed up centrally.
   backup:
-    image: ${AUTOKARTA_IMAGE}
+    image: *image
     profiles: ["backup"]
     restart: unless-stopped
     # Root only to write into <DATA_DIR>/backups, which Docker creates as root.

@@ -204,9 +204,13 @@ only `docker-compose.yml` and `.env`.
 CI builds the image for linux/amd64 and linux/arm64 on native runners and
 pushes one multi-arch tag to `ghcr.io/eretuk/autokarta` (only ghcr.io, never Docker
 Hub) from `main` (`latest`, `sha-*`) and `v*` tags; the server pulls it via
-`AUTOKARTA_IMAGE`. No Docker volumes: production data is bind-mounted from
+the version pinned in `docker-compose.yml` (`x-image`, not `.env`, which
+users keep encrypted). A `v*` tag must equal the version in
+`backend/Cargo.toml`, `frontend/package.json` and `x-image` (CI checks it);
+the tag build publishes a GitHub Release with `docker-compose.yml` and
+`.env.example` attached. No Docker volumes: production data is bind-mounted from
 `DATA_DIR` (`db/` at `/var/lib/postgresql`, `backups/`), dev data from
-`./.data/`. Every compose value comes from `.env` (`.env.example` for
+`./.data/`. Every other compose value comes from `.env` (`.env.example` for
 production, `.env.dev.example` for development) and is required (`:?`).
 Security headers (Referrer-Policy, nosniff, frame deny, Permissions-Policy,
 HSTS when `COOKIE_SECURE`) are set by the backend, never only in a proxy.
