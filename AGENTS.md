@@ -208,7 +208,7 @@ the version pinned in `docker-compose.yml` (`x-image`, not `.env`, which
 users keep encrypted). A `v*` tag must equal the version in
 `backend/Cargo.toml`, `frontend/package.json` and `x-image` (CI checks it);
 the tag build publishes a GitHub Release with `docker-compose.yml` and
-`.env.example` attached. No Docker volumes: production data is bind-mounted from
+`.env.example` attached (uploaded as `env.example`: GitHub renames dotfiles). No Docker volumes: production data is bind-mounted from
 `DATA_DIR` (`db/` at `/var/lib/postgresql`, `backups/`), dev data from
 `./.data/`. Every other compose value comes from `.env` (`.env.example` for
 production, `.env.dev.example` for development) and is required (`:?`).

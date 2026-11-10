@@ -73,7 +73,8 @@ Releases: set the new version in `backend/Cargo.toml`,
 `frontend/package.json` (`npm version <x.y.z> --no-git-tag-version`) and the
 `x-image` line of `docker-compose.yml` (CI fails if they differ), merge, then
 tag `main` with `v<x.y.z>` and push the tag. CI publishes the image and a
-GitHub Release with `docker-compose.yml` and `.env.example` attached.
+GitHub Release with `docker-compose.yml` and `.env.example` (as
+`env.example`: GitHub renames assets that start with a dot) attached.
 
 ### Testing on a phone
 
@@ -132,7 +133,7 @@ also live on another disk.
    sudo mkdir -p /opt/docker/autokarta && cd /opt/docker/autokarta
    base=https://github.com/Eretuk/autokarta/releases/latest/download
    sudo curl -fsSLO $base/docker-compose.yml
-   sudo curl -fsSL -o .env $base/.env.example
+   sudo curl -fsSL -o .env $base/env.example
    sudo chmod 600 .env
    ```
 
