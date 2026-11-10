@@ -229,6 +229,25 @@ the staff page:
 docker compose exec app autokarta create-admin --username rescue
 ```
 
+### Logs
+
+```bash
+docker compose logs -f app
+```
+
+One line per API request: request id, client address, signed-in user,
+method, path, status, error code and time. Sign-ins (including failed ones
+and lockouts), sign-outs, password changes and changes to staff accounts are
+logged too. Search texts (query strings) are never logged: they contain
+names, phones and plates. The client address is the last entry of
+`X-Forwarded-For`, so the reverse proxy must set it. Every response carries
+an `X-Request-Id` header with the id from the log.
+
+```text
+INFO req{id=429c9d82 ip=198.51.100.4 user=ivan}: GET /api/vehicles 200 ms=17
+WARN req{id=187caca9 ip=198.51.100.4}: sign-in failed username=ivan
+```
+
 ### Database
 
 PostgreSQL 18, files in `<DATA_DIR>/db` (the image keeps each major version

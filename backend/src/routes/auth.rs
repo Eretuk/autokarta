@@ -54,10 +54,12 @@ async fn login(
     let ok =
         auth::verify_password(req.password, row.as_ref().map(|r| r.password_hash.clone())).await;
     let Some(row) = row.filter(|_| ok) else {
+        tracing::warn!(username = %key, "sign-in failed");
         state.limiter.record_failure(&key);
         return Err(AppError::InvalidCredentials);
     };
     state.limiter.reset(&key);
+    crate::request_log::record_user(&key);
 
     let user_agent = headers
         .get(header::USER_AGENT)
@@ -65,6 +67,7 @@ async fn login(
         .map(str::to_owned);
     let token = auth::create_session(&state, row.id, user_agent).await?;
     let user = load_user(&state, row.id).await?;
+    tracing::info!("signed in");
 
     Ok((
         jar.add(auth::session_cookie(&state.settings, token)),
@@ -77,7 +80,10 @@ async fn logout(
     jar: CookieJar,
 ) -> AppResult<(CookieJar, StatusCode)> {
     if let Some(cookie) = jar.get(SESSION_COOKIE) {
-        auth::delete_session(&state, cookie.value()).await?;
+        if let Some(username) = auth::delete_session(&state, cookie.value()).await? {
+            crate::request_log::record_user(&username);
+            tracing::info!("signed out");
+        }
     }
     Ok((jar.remove(auth::removal_cookie()), StatusCode::NO_CONTENT))
 }
@@ -175,6 +181,7 @@ async fn change_password(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    tracing::info!("password changed, other devices signed out");
 
     Ok(StatusCode::NO_CONTENT)
 }

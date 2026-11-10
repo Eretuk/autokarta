@@ -212,6 +212,13 @@ the tag build publishes a GitHub Release with `docker-compose.yml` and
 `DATA_DIR` (`db/` at `/var/lib/postgresql`, `backups/`), dev data from
 `./.data/`. Every other compose value comes from `.env` (`.env.example` for
 production, `.env.dev.example` for development) and is required (`:?`).
+Logging (`backend/src/request_log.rs`): one INFO line per `/api` request in a
+span with request id, client IP (last `X-Forwarded-For` hop) and username
+(recorded by the session extractor), never the query string (search terms are
+personal data); static files and `/api/health` only at DEBUG, 5xx at ERROR.
+`AppError` puts its code into the response extensions for that line. Auth
+and staff changes log their own events; log new security-relevant actions the
+same way. Responses carry `X-Request-Id`.
 Security headers (Referrer-Policy, nosniff, frame deny, Permissions-Policy,
 HSTS when `COOKIE_SECURE`) are set by the backend, never only in a proxy.
 Dev HTTPS for phones: `docker-compose.dev.yml --profile https` (Caddy with

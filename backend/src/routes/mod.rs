@@ -20,7 +20,6 @@ use axum::{
 use tower_http::{
     compression::CompressionLayer,
     services::{ServeDir, ServeFile},
-    trace::TraceLayer,
 };
 
 use crate::{error::AppError, state::AppState};
@@ -53,7 +52,7 @@ pub fn router(state: AppState, static_dir: Option<&Path>) -> Router {
         security_headers(req, next, hsts)
     }))
     .layer(CompressionLayer::new())
-    .layer(TraceLayer::new_for_http())
+    .layer(middleware::from_fn(crate::request_log::log_requests))
     .with_state(state)
 }
 

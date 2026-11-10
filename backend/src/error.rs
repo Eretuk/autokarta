@@ -59,7 +59,10 @@ impl IntoResponse for AppError {
             AppError::Internal(_) => "internal".to_string(),
             other => other.to_string(),
         };
-        let mut response = (status, Json(json!({ "error": code }))).into_response();
+        let mut response = (status, Json(json!({ "error": &code }))).into_response();
+        response
+            .extensions_mut()
+            .insert(crate::request_log::ErrorCode(code));
         if let AppError::TooManyAttempts { retry_after_secs } = self {
             response
                 .headers_mut()

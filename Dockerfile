@@ -57,7 +57,7 @@ ENV PATH=/usr/lib/postgresql/${PG_MAJOR}/bin:$PATH \
     BIND_ADDR=0.0.0.0:8080 \
     STATIC_DIR=/app/static \
     COOKIE_SECURE=true \
-    RUST_LOG=autokarta=info,tower_http=info
+    RUST_LOG=autokarta=info
 USER autokarta
 EXPOSE 8080
 CMD ["autokarta", "serve"]
