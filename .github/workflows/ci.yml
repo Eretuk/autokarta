@@ -187,6 +187,9 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
+        # GitHub renames assets that start with a dot (".env.example" becomes
+        # "default.env.example"), so the template goes up as env.example.
         run: |
-          gh release create "$GITHUB_REF_NAME" docker-compose.yml .env.example \
+          cp .env.example env.example
+          gh release create "$GITHUB_REF_NAME" docker-compose.yml env.example \
             --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
