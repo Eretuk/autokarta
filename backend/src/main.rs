@@ -2,6 +2,7 @@
 
 mod auth;
 mod error;
+mod request_log;
 mod routes;
 mod state;
 mod validate;
@@ -69,13 +70,15 @@ async fn main() -> anyhow::Result<()> {
         // Colours only in a terminal; `docker compose logs` and log
         // collectors get plain text.
         .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
+        // Messages say what happened; module paths only add noise.
+        .with_target(false)
         .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("autokarta=info,tower_http=info")),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("autokarta=info")),
         )
         .init();
 
     let cli = Cli::parse();
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), "autokarta starting");
 
     let db = PgPoolOptions::new()
         .max_connections(10)
@@ -88,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
         .run(&db)
         .await
         .context("database migration failed")?;
+    tracing::info!("database ready");
 
     match cli.command.unwrap_or(Command::Serve) {
         Command::Serve => serve(db, cli.serve).await,
@@ -127,9 +131,14 @@ async fn serve(db: sqlx::PgPool, args: ServeArgs) -> anyhow::Result<()> {
     let app = routes::router(state, static_dir);
     let listener = tokio::net::TcpListener::bind(args.bind).await?;
     tracing::info!("listening on http://{}", args.bind);
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    // The peer address is the client's only without a proxy; behind one the
+    // request log prefers X-Forwarded-For.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
     Ok(())
 }
 

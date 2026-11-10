@@ -87,6 +87,7 @@ async fn create(
         other => other.into(),
     })?;
 
+    tracing::info!(username = %row.username, role = %row.role, "account created");
     Ok((StatusCode::CREATED, Json(row)))
 }
 
@@ -147,6 +148,12 @@ async fn update(
             .await?;
     }
     tx.commit().await?;
+    tracing::info!(
+        username = %row.username,
+        role = %row.role,
+        active = row.is_active,
+        "account updated"
+    );
 
     Ok(Json(row))
 }
@@ -188,6 +195,7 @@ async fn reset_password(
         .await?;
     tx.commit().await?;
     state.limiter.reset(&username);
+    tracing::info!(%username, "password reset by owner, signed out everywhere");
 
     Ok(StatusCode::NO_CONTENT)
 }

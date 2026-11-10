@@ -99,12 +99,17 @@ pub async fn create_session(
     Ok(token)
 }
 
-pub async fn delete_session(state: &AppState, token: &str) -> AppResult<()> {
-    sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
-        .bind(hash_token(token))
-        .execute(&state.db)
-        .await?;
-    Ok(())
+/// Returns the username the session belonged to, if it existed.
+pub async fn delete_session(state: &AppState, token: &str) -> AppResult<Option<String>> {
+    let username = sqlx::query_scalar(
+        "DELETE FROM sessions s USING users u
+          WHERE s.token_hash = $1 AND u.id = s.user_id
+         RETURNING u.username",
+    )
+    .bind(hash_token(token))
+    .fetch_optional(&state.db)
+    .await?;
+    Ok(username)
 }
 
 pub fn session_cookie(settings: &Settings, token: String) -> Cookie<'static> {
@@ -234,6 +239,7 @@ impl FromRequestParts<AppState> for SignedIn {
         .fetch_optional(&state.db)
         .await?
         .ok_or(AppError::Unauthorized)?;
+        crate::request_log::record_user(&user.username);
 
         // Cheap activity tracking: at most one write per session every 10 minutes.
         sqlx::query(
@@ -294,6 +300,7 @@ impl LoginLimiter {
         if let Some((failures, since)) = entries.get(key) {
             let elapsed = since.elapsed();
             if *failures >= MAX_FAILURES && elapsed < WINDOW {
+                tracing::warn!(username = %key, "sign-in refused: locked out");
                 return Err(AppError::TooManyAttempts {
                     retry_after_secs: (WINDOW - elapsed).as_secs().max(1),
                 });
@@ -312,6 +319,13 @@ impl LoginLimiter {
             *entry = (0, Instant::now());
         }
         entry.0 += 1;
+        if entry.0 == MAX_FAILURES {
+            tracing::warn!(
+                username = %key,
+                minutes = WINDOW.as_secs() / 60,
+                "too many failed sign-ins, username locked"
+            );
+        }
     }
 
     pub fn reset(&self, key: &str) {

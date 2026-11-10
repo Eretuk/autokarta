@@ -22,7 +22,7 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio",
 thiserror = "2"
 time = { version = "0.3", features = ["serde", "serde-human-readable"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
-tower-http = { version = "0.6", features = ["fs", "trace", "compression-gzip"] }
+tower-http = { version = "0.6", features = ["fs", "compression-gzip"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["serde", "v4"] }
