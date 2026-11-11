@@ -51,9 +51,21 @@ The **vehicle** is the center of the model.
 - `rentals` + `rental_payments`: contract (taxi or regular), driver, period, rate, payments.
 - `sale_listings`: price, description, photos, status.
 - `maintenance_rules`: "every N km or M months, whichever comes first".
-  System templates (oil, timing belt, brakes, insurance, inspection) have a
+  System templates (oil, timing belt, brakes) have a
   `code` translated in the UI; user-created rules are plain text. For taxi
   cars predict the due date from average daily mileage.
+- `vehicle_documents` (planned, **fleet cars first; very important in
+  Poland**): dated documents with a "valid until" date, not km/month rules.
+  At least: compulsory third-party insurance **OC** (valid until, insurer,
+  policy number; optional AC/NNW/assistance on the same policy) and the
+  periodic technical inspection **badanie techniczne** (valid until, as
+  entered in the registration certificate). In Poland driving without valid
+  OC brings a heavy UFG fine even for a gap of one day, and a car without a
+  valid inspection may not be driven; taxis are inspected every year. Keep a
+  history (one row per policy/inspection, the latest is current), show the
+  expiry on the vehicle page and a "documents expiring soon / expired" list
+  for the fleet, and feed it into reminders (step 5). Staff data, never on
+  the public share page.
 - `vehicle_share_links`: random 32-byte token (base64url), can be revoked and
   regenerated (e.g. when a car is sold).
 
@@ -98,8 +110,11 @@ Stack (as scaffolded, exact versions pinned in `package.json`):
   Russian UI falls back to the system font. Open question for the author.
 
 ### Database
-PostgreSQL 18 (dev: `docker-compose.dev.yml`). Daily `pg_dump` backups with
-rotation plus an off-site copy are a hard requirement before real data goes in.
+PostgreSQL 18 (dev: `docker-compose.dev.yml`). Regular backups with rotation
+plus an off-site copy are a hard requirement before real data goes in. They
+are the operator's job, not the containers': an external backup tool
+(the author runs DBackup hourly) or a host cron job; `deploy/backup.sh` is
+only an example for the latter.
 
 ## 4. What exists now
 
@@ -118,7 +133,9 @@ rotation plus an off-site copy are a hard requirement before real data goes in.
 - Session auth: 256-bit random token in an HttpOnly, SameSite=Lax cookie
   `autokarta_session`; DB stores only its SHA-256 hash. `COOKIE_SECURE=false`
   only for local HTTP development.
-- Login rate limiter: 5 failures per username, then 15 minutes lockout (in memory).
+- Login rate limiter (in memory, 15 minutes): 5 failures per username from
+  one client address, 50 per username from all addresses together, so a
+  stranger cannot lock the owner out with 5 wrong passwords.
 - Constant-time-ish login: unknown usernames still run an Argon2 verification.
 - Extractors: `CurrentUser` (any staff) and `Owner` (owners only).
 
@@ -127,6 +144,7 @@ API (all JSON, prefix `/api`):
 | Method | Path | Who | Notes |
 |---|---|---|---|
 | GET | `/health` | anyone | checks DB |
+| GET | `/version` | staff | `{version, update_available, latest?}`; `latest` (newest GitHub release) owners only |
 | POST | `/auth/login` | anyone | `{username, password}`; username is case-insensitive |
 | POST | `/auth/logout` | staff | |
 | GET | `/auth/me` | staff | current user |
@@ -195,12 +213,12 @@ not done yet. The backend sets `Cache-Control`: `immutable` for
 `/_app/immutable/*`, `no-cache` for other static files.
 
 Deployment: `Dockerfile` (node build + cargo-chef + debian-slim, non-root),
-`docker-compose.yml` (db, app, backup; **no proxy**: production runs behind
-an external reverse proxy that terminates TLS and forwards to `APP_BIND`),
-`deploy/backup.sh` (daily `pg_dump` with rotation, built into the app image
-as `autokarta-backup` together with `pg_dump` 18; the `backup` service runs
-the app image and is enabled by `COMPOSE_PROFILES=backup`). The server needs
-only `docker-compose.yml` and `.env`.
+`docker-compose.yml` (db and app only; **no proxy**: production runs behind
+an external reverse proxy that terminates TLS and forwards to `APP_BIND`;
+no backup service, see "Database" above). The image has a
+`HEALTHCHECK` running `autokarta healthcheck` (plain HTTP to
+`/api/health`, no DB connection of its own; the image has no curl). The
+server needs only `docker-compose.yml` and `.env`.
 CI builds the image for linux/amd64 and linux/arm64 on native runners and
 pushes one multi-arch tag to `ghcr.io/eretuk/autokarta` (only ghcr.io, never Docker
 Hub) from `main` (`latest`, `sha-*`) and `v*` tags; the server pulls it via
@@ -209,32 +227,51 @@ users keep encrypted). A `v*` tag must equal the version in
 `backend/Cargo.toml`, `frontend/package.json` and `x-image` (CI checks it);
 the tag build publishes a GitHub Release with `docker-compose.yml` and
 `.env.example` attached (uploaded as `env.example`: GitHub renames dotfiles). No Docker volumes: production data is bind-mounted from
-`DATA_DIR` (`db/` at `/var/lib/postgresql`, `backups/`), dev data from
+`DATA_DIR` (`db/` at `/var/lib/postgresql`), dev data from
 `./.data/`. Every other compose value comes from `.env` (`.env.example` for
-production, `.env.dev.example` for development) and is required (`:?`).
+production, `.env.dev.example` for development) and is required (`:?`),
+except `TRUSTED_PROXIES` (default `private`) and `UPDATE_CHECK` (default
+`true`: `backend/src/updates.rs` asks the GitHub releases API every 12 h,
+User-Agent `autokarta/<version>` only; reqwest with rustls on ring, not
+aws-lc, so arm64 builds need no cmake), added later and optional so
+that existing `.env` files keep working; new settings for running installs
+follow that pattern.
 Logging (`backend/src/request_log.rs`): one INFO line per `/api` request in a
-span with request id, client IP (last `X-Forwarded-For` hop) and username
+span with request id, client IP and username
 (recorded by the session extractor), never the query string (search terms are
 personal data); static files and `/api/health` only at DEBUG, 5xx at ERROR.
 `AppError` puts its code into the response extensions for that line. Auth
 and staff changes log their own events; log new security-relevant actions the
 same way. Responses carry `X-Request-Id`.
+Client IP (`backend/src/client_ip.rs`): `X-Forwarded-For` is believed only
+when the TCP peer is in `TRUSTED_PROXIES` (comma-separated IPs/CIDRs,
+`private` = loopback + RFC 1918 + ULA, `none`); the chain is walked from the
+right past trusted hops. The resolved address is put into request
+extensions (`request_log::ClientIp`) for the login limiter.
 Security headers (Referrer-Policy, nosniff, frame deny, Permissions-Policy,
 HSTS when `COOKIE_SECURE`) are set by the backend, never only in a proxy.
 Dev HTTPS for phones: `docker-compose.dev.yml --profile https` (Caddy with
-`tls internal` on `LAN_HOST:8443`, proxies to Vite). **Off-site
-backup copy is not automated yet.** CI: `.github/workflows/ci.yml`.
+`tls internal` on `LAN_HOST:8443`, proxies to Vite). CI:
+`.github/workflows/ci.yml`; every action is pinned to a commit SHA
+(Dependabot updates them, `.github/dependabot.yml`), keep it that way.
+`.github/workflows/cla.yml` (CLA Assistant, `pull_request_target`, never
+checks out PR code) stores signatures on the `cla-signatures` branch.
 
 ## 5. Roadmap (in order)
 
 1. Frontend skeleton: login, app shell, staff management, account page
    (change password, language), camera scanner test page. Production
    `Dockerfile` (multi-stage, cargo-chef), `docker-compose.yml` with app,
-   PostgreSQL and backup service (HTTPS via an external reverse proxy), CI workflow.
+   PostgreSQL (HTTPS via an external reverse proxy), CI workflow.
 2. Vehicles, odometer readings, work orders.
 3. Parts stock with scanning, consumption into work orders, low-stock list.
 4. Public share link page.
 5. Maintenance reminders: background task in the same binary + Telegram bot.
+   Before or together with it: fleet documents (`vehicle_documents`, see
+   section 2): OC insurance and badanie techniczne "valid until" dates on
+   fleet cars, an expiring/expired list, and reminders well ahead of the
+   date (e.g. 30, 14 and 3 days). Can be pulled forward if the beta tester
+   asks: it is a small change with a big payoff in Poland.
 6. Rentals and payments, then cars for sale.
 
 After step 3 the beta tester uses it for 1–2 weeks; his feedback reshapes the rest.
