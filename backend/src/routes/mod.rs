@@ -27,6 +27,7 @@ use crate::{error::AppError, state::AppState};
 pub fn router(state: AppState, static_dir: Option<&Path>) -> Router {
     let api = Router::new()
         .route("/health", get(health::health))
+        .route("/version", get(health::version))
         .nest("/auth", auth::routes())
         .nest("/users", users::routes())
         .nest("/settings", settings::routes())
@@ -52,7 +53,10 @@ pub fn router(state: AppState, static_dir: Option<&Path>) -> Router {
         security_headers(req, next, hsts)
     }))
     .layer(CompressionLayer::new())
-    .layer(middleware::from_fn(crate::request_log::log_requests))
+    .layer(middleware::from_fn_with_state(
+        state.clone(),
+        crate::request_log::log_requests,
+    ))
     .with_state(state)
 }
 

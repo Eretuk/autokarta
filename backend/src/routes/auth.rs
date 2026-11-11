@@ -2,7 +2,7 @@ use axum::{
     extract::State,
     http::{header, HeaderMap, StatusCode},
     routing::{get, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use axum_extra::extract::cookie::CookieJar;
 use serde::Deserialize;
@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::{
     auth::{self, CurrentUser, SignedIn, SESSION_COOKIE},
     error::{AppError, AppResult},
+    request_log::ClientIp,
     state::AppState,
     validate,
 };
@@ -37,12 +38,14 @@ struct LoginRow {
 
 async fn login(
     State(state): State<AppState>,
+    client: Option<Extension<ClientIp>>,
     headers: HeaderMap,
     jar: CookieJar,
     Json(req): Json<LoginRequest>,
 ) -> AppResult<(CookieJar, Json<CurrentUser>)> {
     let key = req.username.trim().to_lowercase();
-    state.limiter.check(&key)?;
+    let ip = client.and_then(|Extension(ClientIp(ip))| ip);
+    state.limiter.check(&key, ip)?;
 
     let row = sqlx::query_as::<_, LoginRow>(
         "SELECT id, password_hash FROM users WHERE lower(username) = $1 AND is_active",
@@ -55,10 +58,10 @@ async fn login(
         auth::verify_password(req.password, row.as_ref().map(|r| r.password_hash.clone())).await;
     let Some(row) = row.filter(|_| ok) else {
         tracing::warn!(username = %key, "sign-in failed");
-        state.limiter.record_failure(&key);
+        state.limiter.record_failure(&key, ip);
         return Err(AppError::InvalidCredentials);
     };
-    state.limiter.reset(&key);
+    state.limiter.reset_client(&key, ip);
     crate::request_log::record_user(&key);
 
     let user_agent = headers

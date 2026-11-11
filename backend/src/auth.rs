@@ -5,6 +5,7 @@
 
 use std::{
     collections::HashMap,
+    net::IpAddr,
     sync::{Mutex, OnceLock},
     time::{Duration, Instant},
 };
@@ -284,52 +285,93 @@ impl FromRequestParts<AppState> for Owner {
 
 // ---------- login rate limiter ----------
 
-const MAX_FAILURES: u32 = 5;
+/// Failures from one address for one username before that address is
+/// locked out of it.
+const MAX_FAILURES_PER_CLIENT: u32 = 5;
+/// Failures for one username from all addresses together: stops a
+/// distributed guess without letting a single stranger lock the owner out
+/// with five wrong passwords.
+const MAX_FAILURES_PER_USER: u32 = 50;
 const WINDOW: Duration = Duration::from_secs(15 * 60);
 
-/// In-memory limiter: after 5 failed logins for a username, further attempts
-/// are refused for 15 minutes. Resets on restart, which is fine for one instance.
+/// In-memory limiter over two counters per username: one per client
+/// address and one for all of them. Resets on restart, which is fine for
+/// one instance.
 #[derive(Default)]
 pub struct LoginLimiter {
     entries: Mutex<HashMap<String, (u32, Instant)>>,
 }
 
+/// Counter keys; usernames cannot contain a newline, so they never clash.
+fn client_key(username: &str, ip: Option<IpAddr>) -> String {
+    match ip {
+        Some(ip) => format!("{username}\n{ip}"),
+        None => format!("{username}\n-"),
+    }
+}
+
 impl LoginLimiter {
-    pub fn check(&self, key: &str) -> AppResult<()> {
+    pub fn check(&self, username: &str, ip: Option<IpAddr>) -> AppResult<()> {
         let entries = self.entries.lock().expect("limiter lock");
-        if let Some((failures, since)) = entries.get(key) {
-            let elapsed = since.elapsed();
-            if *failures >= MAX_FAILURES && elapsed < WINDOW {
-                tracing::warn!(username = %key, "sign-in refused: locked out");
-                return Err(AppError::TooManyAttempts {
-                    retry_after_secs: (WINDOW - elapsed).as_secs().max(1),
-                });
+        let limits = [
+            (client_key(username, ip), MAX_FAILURES_PER_CLIENT),
+            (username.to_owned(), MAX_FAILURES_PER_USER),
+        ];
+        for (key, max) in limits {
+            if let Some((failures, since)) = entries.get(&key) {
+                let elapsed = since.elapsed();
+                if *failures >= max && elapsed < WINDOW {
+                    tracing::warn!(username = %username, "sign-in refused: locked out");
+                    return Err(AppError::TooManyAttempts {
+                        retry_after_secs: (WINDOW - elapsed).as_secs().max(1),
+                    });
+                }
             }
         }
         Ok(())
     }
 
-    pub fn record_failure(&self, key: &str) {
+    pub fn record_failure(&self, username: &str, ip: Option<IpAddr>) {
         let mut entries = self.entries.lock().expect("limiter lock");
         if entries.len() > 10_000 {
             entries.retain(|_, (_, since)| since.elapsed() < WINDOW);
         }
-        let entry = entries.entry(key.to_owned()).or_insert((0, Instant::now()));
-        if entry.1.elapsed() >= WINDOW {
-            *entry = (0, Instant::now());
-        }
-        entry.0 += 1;
-        if entry.0 == MAX_FAILURES {
-            tracing::warn!(
-                username = %key,
-                minutes = WINDOW.as_secs() / 60,
-                "too many failed sign-ins, username locked"
-            );
+        let limits = [
+            (client_key(username, ip), MAX_FAILURES_PER_CLIENT),
+            (username.to_owned(), MAX_FAILURES_PER_USER),
+        ];
+        for (key, max) in limits {
+            let entry = entries.entry(key).or_insert((0, Instant::now()));
+            if entry.1.elapsed() >= WINDOW {
+                *entry = (0, Instant::now());
+            }
+            entry.0 += 1;
+            if entry.0 == max {
+                tracing::warn!(
+                    username = %username,
+                    minutes = WINDOW.as_secs() / 60,
+                    all_addresses = max == MAX_FAILURES_PER_USER,
+                    "too many failed sign-ins, username locked"
+                );
+            }
         }
     }
 
-    pub fn reset(&self, key: &str) {
-        self.entries.lock().expect("limiter lock").remove(key);
+    /// After a successful sign-in from this address.
+    pub fn reset_client(&self, username: &str, ip: Option<IpAddr>) {
+        self.entries
+            .lock()
+            .expect("limiter lock")
+            .remove(&client_key(username, ip));
+    }
+
+    /// Lifts every lockout of a username (an owner reset its password).
+    pub fn reset_user(&self, username: &str) {
+        let prefix = format!("{username}\n");
+        self.entries
+            .lock()
+            .expect("limiter lock")
+            .retain(|k, _| k != username && !k.starts_with(&prefix));
     }
 }
 
@@ -350,16 +392,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn limiter_blocks_after_max_failures() {
+    fn limiter_blocks_per_address_then_per_user() {
         let l = LoginLimiter::default();
-        for _ in 0..MAX_FAILURES {
-            assert!(l.check("ivan").is_ok());
-            l.record_failure("ivan");
+        let a: Option<IpAddr> = Some("198.51.100.1".parse().unwrap());
+        let b: Option<IpAddr> = Some("198.51.100.2".parse().unwrap());
+        for _ in 0..MAX_FAILURES_PER_CLIENT {
+            assert!(l.check("ivan", a).is_ok());
+            l.record_failure("ivan", a);
         }
-        assert!(l.check("ivan").is_err());
-        assert!(l.check("anna").is_ok());
-        l.reset("ivan");
-        assert!(l.check("ivan").is_ok());
+        // The guesser is locked out; Ivan at his own address is not.
+        assert!(l.check("ivan", a).is_err());
+        assert!(l.check("ivan", b).is_ok());
+        assert!(l.check("anna", a).is_ok());
+
+        // Many addresses together lock the username everywhere.
+        for i in 0..MAX_FAILURES_PER_USER {
+            l.record_failure(
+                "anna",
+                Some(IpAddr::from([10, 0, (i / 256) as u8, i as u8])),
+            );
+        }
+        assert!(l.check("anna", b).is_err());
+
+        l.reset_user("ivan");
+        l.reset_user("anna");
+        assert!(l.check("ivan", a).is_ok());
+        assert!(l.check("anna", b).is_ok());
     }
 
     #[tokio::test]
