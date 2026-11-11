@@ -46,7 +46,7 @@
 		<dd>
 			<strong>{wo.vehicle.plate ?? ''}</strong>
 			{vehicleName(wo.vehicle)}
-			{#if wo.vehicle.vin}<span class="mono">· VIN {wo.vehicle.vin}</span>{/if}
+			{#if wo.vehicle.vin}<span class="mono">· {t('vehicles.vin')} {wo.vehicle.vin}</span>{/if}
 			{#if wo.vehicle.frame_number}<span class="mono">· {wo.vehicle.frame_number}</span>{/if}
 		</dd>
 		<dt>{t('vehicles.odometer')}</dt>

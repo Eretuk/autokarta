@@ -6,7 +6,9 @@ export default defineConfig({
 	plugins: [
 		sveltekit(),
 		SvelteKitPWA({
-			registerType: 'autoUpdate',
+			// A new version is offered with a "Reload" bar, never applied by
+			// reloading on its own: that would lose a half-filled form.
+			registerType: 'prompt',
 			// Registered manually in the root layout via virtual:pwa-register.
 			injectRegister: false,
 			kit: { adapterFallback: 'index.html', spa: true },

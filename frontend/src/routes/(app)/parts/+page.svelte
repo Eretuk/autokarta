@@ -64,6 +64,7 @@
 	}
 
 	function setFilter(f: Filter) {
+		search.cancel();
 		filter = f;
 		loading = true;
 		remember();
@@ -71,6 +72,7 @@
 	}
 
 	function onScan(text: string) {
+		search.cancel();
 		query = text.trim();
 		filter = 'all';
 		loading = true;

@@ -2,6 +2,7 @@
 // (`{"error": "username_taken"}`); they are translated in the UI via `errors.*`.
 
 import { goto } from '$app/navigation';
+import { error } from '@sveltejs/kit';
 import { hasKey, t } from './i18n/index.svelte';
 
 export class ApiError extends Error {
@@ -85,4 +86,28 @@ export function safeNext(next: string | null): string {
 export function redirectToLogin() {
 	const here = location.pathname + location.search;
 	goto(here === '/' ? '/login' : `/login?next=${encodeURIComponent(here)}`, { replaceState: true });
+}
+
+/**
+ * Turns an error from `api` inside a `load` into a SvelteKit page error, so
+ * the error page can say what happened: a plain exception there is always
+ * shown as a 500. The message is the error code (`network_error`, ...).
+ */
+export function pageError(e: unknown): never {
+	if (e instanceof ApiError) {
+		// 400: a malformed id in the URL, which is as good as "not found".
+		if (e.status === 404 || e.status === 400) error(404, 'not_found');
+		if (e.status === 0) error(503, 'network_error');
+		error(e.status, e.code);
+	}
+	throw e;
+}
+
+/** `api('GET', path)` for `load` functions: failures become page errors. */
+export async function loadApi<T>(path: string): Promise<T> {
+	try {
+		return await api<T>('GET', path);
+	} catch (e) {
+		pageError(e);
+	}
 }

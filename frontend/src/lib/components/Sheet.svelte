@@ -10,6 +10,9 @@
 		children
 	}: { open?: boolean; title: string; children: Snippet } = $props();
 
+	// Several sheets live on one page: each needs its own title id.
+	const titleId = $props.id();
+
 	let dialog: HTMLDialogElement;
 
 	// Closing on a backdrop tap must not fire when a finger went down inside
@@ -37,11 +40,11 @@
 		if (pressedOutside && isOutside(e)) open = false;
 		pressedOutside = false;
 	}}
-	aria-labelledby="sheet-title"
+	aria-labelledby={titleId}
 >
 	<div class="inner">
 		<header>
-			<h2 id="sheet-title">{title}</h2>
+			<h2 id={titleId}>{title}</h2>
 			<button type="button" class="close" onclick={() => (open = false)} aria-label={t('common.close')}>
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
 			</button>

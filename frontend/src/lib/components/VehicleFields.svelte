@@ -38,6 +38,8 @@
 	import { t } from '$lib/i18n/index.svelte';
 
 	let { form = $bindable() }: { form: VehicleForm } = $props();
+	// Labels for the button groups (several forms can be on one page).
+	const uid = $props.id();
 
 	const ROLES: VehicleRole[] = ['customer', 'fleet', 'for_sale'];
 	const UNITS: DistanceUnit[] = ['km', 'mi'];
@@ -101,8 +103,8 @@
 		</label>
 	</div>
 
-	<span class="label">{t('vehicles.role')}</span>
-	<div class="segmented field-gap">
+	<span class="label" id="{uid}-role">{t('vehicles.role')}</span>
+	<div class="segmented field-gap" role="group" aria-labelledby="{uid}-role">
 		{#each ROLES as r (r)}
 			<button type="button" class="btn" aria-pressed={form.role === r} onclick={() => (form.role = r)}
 				>{t(`vehicles.roles.${r}`)}</button
@@ -110,8 +112,8 @@
 		{/each}
 	</div>
 
-	<span class="label">{t('vehicles.odometerUnit')}</span>
-	<div class="segmented field-gap">
+	<span class="label" id="{uid}-unit">{t('vehicles.odometerUnit')}</span>
+	<div class="segmented field-gap" role="group" aria-labelledby="{uid}-unit">
 		{#each UNITS as u (u)}
 			<button type="button" class="btn" aria-pressed={form.odometer_unit === u} onclick={() => (form.odometer_unit = u)}
 				>{t(`units.${u}`)}</button

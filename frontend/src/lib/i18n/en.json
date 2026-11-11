@@ -6,7 +6,9 @@
 		"loading": "Loading…",
 		"saveChanges": "Save changes",
 		"cancel": "Cancel",
-		"delete": "Delete"
+		"delete": "Delete",
+		"updateAvailable": "A new version of the app is ready.",
+		"reload": "Reload"
 	},
 	"nav": {
 		"main": "Main menu",
@@ -15,7 +17,8 @@
 		"account": "Account",
 		"vehicles": "Vehicles",
 		"orders": "Orders",
-		"parts": "Parts"
+		"parts": "Parts",
+		"updateAvailable": "Update available"
 	},
 	"login": {
 		"title": "Sign in",
@@ -91,7 +94,13 @@
 		"passwordSignsOut": "Other devices where you are signed in will be signed out.",
 		"changePasswordSubmit": "Change password",
 		"passwordChanged": "Password changed. Other devices were signed out.",
-		"signOut": "Sign out"
+		"signOut": "Sign out",
+		"about": "About",
+		"version": "Autokarta {version}",
+		"upToDate": "This is the latest version.",
+		"newVersion": "Version {version} is available.",
+		"releaseNotes": "What's new",
+		"updateHint": "To update, download the new docker-compose.yml on the server and run: docker compose pull && docker compose up -d"
 	},
 	"scanner": {
 		"title": "Scanner test",
@@ -118,7 +127,9 @@
 	"notFound": {
 		"title": "Page not found",
 		"body": "The link may be outdated.",
-		"home": "Go to home page"
+		"home": "Go to home page",
+		"errorTitle": "Could not open this page",
+		"retry": "Try again"
 	},
 	"errors": {
 		"unknown": "Something went wrong. Try again.",
@@ -416,6 +427,7 @@
 		"currency": "Currency",
 		"currencyHint": "Three-letter code, e.g. PLN, EUR.",
 		"distanceUnit": "Distance unit",
-		"distanceUnitHint": "Default for new vehicles. Each vehicle keeps the unit its odometer shows."
+		"distanceUnitHint": "Default for new vehicles. Each vehicle keeps the unit its odometer shows.",
+		"confirmCurrency": "Change the currency from {from} to {to}? Prices already entered are not converted: the same amounts will be shown in {to}."
 	}
 }

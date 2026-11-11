@@ -6,7 +6,9 @@
 		"loading": "Wczytywanie…",
 		"saveChanges": "Zapisz zmiany",
 		"cancel": "Anuluj",
-		"delete": "Usuń"
+		"delete": "Usuń",
+		"updateAvailable": "Nowa wersja aplikacji jest gotowa.",
+		"reload": "Odśwież"
 	},
 	"nav": {
 		"main": "Menu główne",
@@ -15,7 +17,8 @@
 		"account": "Konto",
 		"vehicles": "Pojazdy",
 		"orders": "Zlecenia",
-		"parts": "Części"
+		"parts": "Części",
+		"updateAvailable": "Dostępna aktualizacja"
 	},
 	"login": {
 		"title": "Logowanie",
@@ -93,7 +96,13 @@
 		"passwordSignsOut": "Na innych urządzeniach nastąpi wylogowanie.",
 		"changePasswordSubmit": "Zmień hasło",
 		"passwordChanged": "Hasło zmienione. Inne urządzenia zostały wylogowane.",
-		"signOut": "Wyloguj się"
+		"signOut": "Wyloguj się",
+		"about": "O aplikacji",
+		"version": "Autokarta {version}",
+		"upToDate": "To najnowsza wersja.",
+		"newVersion": "Dostępna jest wersja {version}.",
+		"releaseNotes": "Co nowego",
+		"updateHint": "Aby zaktualizować, pobierz na serwer nowy docker-compose.yml i uruchom: docker compose pull && docker compose up -d"
 	},
 	"scanner": {
 		"title": "Test skanera",
@@ -120,7 +129,9 @@
 	"notFound": {
 		"title": "Nie znaleziono strony",
 		"body": "Link mógł się zdezaktualizować.",
-		"home": "Przejdź do strony głównej"
+		"home": "Przejdź do strony głównej",
+		"errorTitle": "Nie udało się otworzyć strony",
+		"retry": "Spróbuj ponownie"
 	},
 	"errors": {
 		"unknown": "Coś poszło nie tak. Spróbuj ponownie.",
@@ -426,6 +437,7 @@
 		"currency": "Waluta",
 		"currencyHint": "Trzyliterowy kod, np. PLN, EUR.",
 		"distanceUnit": "Jednostka przebiegu",
-		"distanceUnitHint": "Domyślna dla nowych pojazdów. Każdy pojazd ma jednostkę swojego licznika."
+		"distanceUnitHint": "Domyślna dla nowych pojazdów. Każdy pojazd ma jednostkę swojego licznika.",
+		"confirmCurrency": "Zmienić walutę z {from} na {to}? Wpisane już ceny nie zostaną przeliczone: te same kwoty będą pokazane w {to}."
 	}
 }

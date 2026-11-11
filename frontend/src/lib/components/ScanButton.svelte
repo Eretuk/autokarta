@@ -8,9 +8,15 @@
 
 	let { onScan, title }: { onScan: (d: Detection) => void; title?: string } = $props();
 	let open = $state(false);
+	// One code per opening: a box often carries several (EAN plus a lot
+	// code) and the scanner reports every code found in a frame.
+	let done = false;
 </script>
 
-<button type="button" class="scan" aria-label={t('scanner.scanCode')} onclick={() => (open = true)}>
+<button type="button" class="scan" aria-label={t('scanner.scanCode')} onclick={() => {
+		done = false;
+		open = true;
+	}}>
 	<Icon name="scan" />
 </button>
 
@@ -18,6 +24,8 @@
 	<CameraScanner
 		autostart
 		onDetect={(d) => {
+			if (done) return;
+			done = true;
 			open = false;
 			onScan(d);
 		}}
