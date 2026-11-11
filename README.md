@@ -2,7 +2,8 @@
 
 Workshop, parts and fleet management for small auto services.
 
-Autokarta keeps the full history of every vehicle by VIN: what was repaired,
+Autokarta keeps the full history of every vehicle (found by VIN, frame
+number or plate): what was repaired,
 which parts were used, at what mileage. It tracks spare parts in stock
 (with barcode scanning from a phone camera), rental and taxi cars, and cars
 for sale. Customers can see the service history of their car through a
@@ -117,12 +118,11 @@ Everything lives in one directory, `/opt/docker/autokarta` in this guide
 /opt/docker/autokarta/
 ├── docker-compose.yml
 ├── .env                 all settings (template: .env.example)
-├── db/                  PostgreSQL files, created on first start
-└── backups/             daily dumps, created on first start
+└── db/                  PostgreSQL files, created on first start
 ```
 
-`db/` and `backups/` are placed under `DATA_DIR` from `.env`, so data can
-also live on another disk.
+`db/` is placed under `DATA_DIR` from `.env`, so data can also live on
+another disk.
 
 ### Install
 
@@ -146,9 +146,8 @@ also live on another disk.
      Docker uses `127.0.0.1:8080`. Do not expose the port to the internet:
      ports published by Docker bypass ufw/firewalld on the same host;
    - `DATA_DIR`: `/opt/docker/autokarta` for the layout above;
-   - `COMPOSE_PROFILES`: keep `backup` for daily dumps into
-     `<DATA_DIR>/backups`, or leave it empty if the database is backed up
-     another way (see "Backups").
+   - `TRUSTED_PROXIES` (optional): only if the reverse proxy reaches this
+     server over a public address; see "Logs".
 
    A missing value stops `docker compose` with a message naming it.
    `POSTGRES_USER`, `POSTGRES_DB` and `POSTGRES_PASSWORD` are applied only
@@ -159,7 +158,7 @@ also live on another disk.
    ```bash
    docker compose pull
    docker compose up -d
-   docker compose ps                         # db, app (and backup) are "Up"
+   docker compose ps                         # db and app are "Up", app "(healthy)"
    curl http://127.0.0.1:8080/api/health     # {"status":"ok",...}; use your APP_BIND address
    ```
 
@@ -171,7 +170,8 @@ also live on another disk.
    ```
 
    Signing in with it asks for a new password right away, so the one in the
-   log stops working. If something is wrong: `docker compose logs -f app`.
+   log stops working (the log itself stays in Docker's log files until they
+   rotate). If something is wrong: `docker compose logs -f app`.
 
 5. Point the reverse proxy at `APP_BIND`. It only terminates TLS; the app sets
    its own security headers. Caddy (here the proxy is another machine and the
@@ -215,7 +215,15 @@ sudo curl -fsSLO https://github.com/Eretuk/autokarta/releases/latest/download/do
 docker compose pull && docker compose up -d
 ```
 
-Database migrations run automatically when the app starts. Release notes
+The account page shows the running version. Owners also see there (and as
+a dot on the account tab) when a newer release is out, with a link to its
+notes; the server asks GitHub twice a day, sending only its version
+(`UPDATE_CHECK=false` in `.env` turns this off).
+
+Database migrations run automatically when the app starts. Coming from 0.2.2
+or earlier, which had a `backup` service: run `docker compose up -d --remove-orphans`
+once to remove its container, and set up backups as described in "Backups".
+Release notes
 (GitHub Releases) say when `.env.example` gained a new setting. To build the image on the server instead
 of pulling it, keep the whole repository there and run
 `docker compose up -d --build`.
@@ -240,9 +248,17 @@ One line per API request: request id, client address, signed-in user,
 method, path, status, error code and time. Sign-ins (including failed ones
 and lockouts), sign-outs, password changes and changes to staff accounts are
 logged too. Search texts (query strings) are never logged: they contain
-names, phones and plates. The client address is the last entry of
-`X-Forwarded-For`, so the reverse proxy must set it. Every response carries
-an `X-Request-Id` header with the id from the log.
+names, phones and plates. Every response carries an `X-Request-Id` header
+with the id from the log.
+
+The client address comes from `X-Forwarded-For`, which the reverse proxy
+must set, but only when the request arrives from a trusted proxy
+(`TRUSTED_PROXIES`, by default loopback and private networks); anyone else's
+header is ignored, so it cannot be faked by connecting to the port directly.
+The same address is used to limit failed sign-ins: 5 per username from one
+address, 50 per username from all addresses together, each for 15 minutes.
+If every request in the log shows the proxy's address, the proxy connects
+over a public address: add it to `TRUSTED_PROXIES` in `.env`.
 
 ```text
 INFO req{id=429c9d82 ip=198.51.100.4 user=ivan}: GET /api/vehicles 200 ms=17
@@ -257,22 +273,36 @@ and restore (or `pg_upgrade`). Deleting `<DATA_DIR>/db` deletes all data.
 
 ### Backups
 
-With `COMPOSE_PROFILES=backup` in `.env`, the `backup` service (the same
-image, with `pg_dump` 18 inside) writes a dump to `<DATA_DIR>/backups` every
-day (`BACKUP_TIME`, container time is UTC) and keeps `BACKUP_KEEP_DAYS` days.
-Run one immediately: `docker compose run --rm backup now`.
+**Set up backups before entering real data.** The containers do not make
+backups themselves; use what you already have:
 
-If you back up databases centrally instead, leave `COMPOSE_PROFILES` empty
-and point your tool at the `db` service (user and database from `.env`).
+- a backup tool with scheduling, retention and off-site storage (DBackup or
+  similar). The database is the `db` service: host `db` on the compose
+  network `autokarta_default`, user, password and database from `.env`. A
+  tool running in Docker on the same server joins that network
+  (`networks: [autokarta_default]`, declared `external`);
+- or the cron example [`deploy/backup.sh`](deploy/backup.sh): one
+  `pg_dump` through the running `db` container into
+  `/opt/docker/autokarta/backups`, readable by root only, rotated after
+  `KEEP_DAYS` days, and a non-zero exit when the dump failed. Instructions
+  are at the top of the script.
 
-Local dumps do not survive losing the server: **copy `<DATA_DIR>/backups`
-off-site** (e.g. a nightly `rclone sync` or `restic` from the host) before
-entering real data. Restore (replaces all current data):
+Local dumps do not survive losing the server: **copy them off-site** (e.g. a
+nightly `rclone sync` or `restic` from the host).
+
+Restore replaces all current data. It goes into an empty database, so tables
+created by newer migrations do not survive next to an older dump, and in one
+transaction, so a failure leaves the database empty rather than half
+restored. Run the same or a newer app version than the one that made the
+dump. Try it first on a scratch database (`createdb ... autokarta_check`
+and `-d autokarta_check` in the restore line):
 
 ```bash
+cd /opt/docker/autokarta
 docker compose stop app
-docker compose exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' \
-  < /opt/docker/autokarta/backups/autokarta-YYYYMMDD-HHMMSS.dump
+docker compose exec -T db sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+docker compose exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --single-transaction --exit-on-error --no-owner' \
+  < backups/autokarta-YYYYMMDD-HHMMSS.dump
 docker compose start app
 ```
 
