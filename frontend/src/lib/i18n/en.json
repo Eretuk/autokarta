@@ -351,7 +351,8 @@
 		"description": "Description",
 		"deleteItem": "Delete this line",
 		"confirmDeleteItem": "Delete this line from the order?",
-		"confirmCancel": "Cancel this work order? It stays in the history as cancelled."
+		"confirmCancel": "Cancel this work order? It stays in the history as cancelled.",
+		"atCost": "At cost: {price}"
 	},
 	"parts": {
 		"title": "Parts",

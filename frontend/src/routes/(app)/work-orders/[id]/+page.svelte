@@ -20,7 +20,7 @@
 	import { parseReading, withLowerConfirm } from '$lib/odometer';
 	import { session } from '$lib/session.svelte';
 	import { business } from '$lib/settings.svelte';
-	import type { PartSummary, WorkOrderDetail, WorkOrderItem, WorkOrderStatus } from '$lib/types';
+	import type { PartDetail, PartSummary, WorkOrderDetail, WorkOrderItem, WorkOrderStatus } from '$lib/types';
 
 	let { data } = $props();
 	// Follows navigation to another order; local updates overwrite it.
@@ -96,6 +96,7 @@
 		picked = part;
 		pQty = '1';
 		pPrice = moneyInput(part.sell_price_minor, currency);
+		loadCost(part.id);
 		pError = '';
 		// The quantity is the next thing to type (4.5 l of oil): focus it with
 		// the default selected, so typing replaces it.
@@ -138,6 +139,26 @@
 		}
 	}
 
+	// ----- price at cost -----
+	// Parts for friends go at what they cost: the last net purchase cost
+	// plus its VAT, since the order is invoiced with VAT anyway.
+	let atCost = $state<number | null>(null);
+	let costFor = '';
+
+	async function loadCost(partId: string | undefined) {
+		atCost = null;
+		costFor = partId ?? '';
+		if (!isOwner || !partId) return;
+		try {
+			const p = await api<PartDetail>('GET', `/parts/${partId}`);
+			if (costFor !== partId || p.last_cost_minor == null) return;
+			const vat = p.last_cost_vat_percent ?? business.default_vat_percent;
+			atCost = Math.round((p.last_cost_minor * (100 + vat)) / 100);
+		} catch {
+			// Only a shortcut: the price can still be typed.
+		}
+	}
+
 	// ----- edit item -----
 	let itemOpen = $state(false);
 	let item = $state<WorkOrderItem | null>(null);
@@ -153,6 +174,7 @@
 		itemDesc = i.description;
 		itemQty = quantityInput(i.quantity_milli);
 		itemPrice = moneyInput(i.unit_price_minor, currency);
+		loadCost(i.kind === 'part' ? i.part_id : undefined);
 		itemError = '';
 		itemOpen = true;
 	}
@@ -437,6 +459,11 @@
 					</label>
 				{/if}
 			</div>
+			{#if isOwner && atCost !== null}
+				<button class="btn block gap" type="button" onclick={() => (pPrice = moneyInput(atCost, currency))}
+					>{t('workOrders.atCost', { price: formatMoney(atCost, currency) })}</button
+				>
+			{/if}
 			<button class="btn primary block" type="submit" disabled={pBusy}>{t('parts.addToOrder')}</button>
 			<button class="btn block gap" type="button" disabled={pBusy} onclick={() => (picked = null)}
 				>{t('parts.pickAnother')}</button
@@ -466,6 +493,11 @@
 				</label>
 			{/if}
 		</div>
+		{#if isOwner && atCost !== null}
+			<button class="btn block gap" type="button" onclick={() => (itemPrice = moneyInput(atCost, currency))}
+				>{t('workOrders.atCost', { price: formatMoney(atCost, currency) })}</button
+			>
+		{/if}
 		<button class="btn primary block" type="submit" disabled={itemBusy}>{t('common.saveChanges')}</button>
 		<button class="btn danger block gap" type="button" disabled={itemBusy} onclick={deleteItem}
 			>{t('workOrders.deleteItem')}</button
