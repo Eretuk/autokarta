@@ -13,18 +13,27 @@
 	let loading = $state(true);
 	let error = $state('');
 
+	let seq = 0;
+
 	$effect(() => {
 		const f = filter;
+		// Only the latest request may touch the page: a slow answer for a
+		// filter the user already left must not show its rows, error or end
+		// the loading state of the current one.
+		const mine = ++seq;
 		loading = true;
 		api<WorkOrderListRow[]>('GET', `/work-orders?status=${f}`)
 			.then((r) => {
-				if (f === filter) {
-					rows = r;
-					error = '';
-				}
+				if (mine !== seq) return;
+				rows = r;
+				error = '';
 			})
-			.catch((e) => (error = errorMessage(e)))
-			.finally(() => (loading = false));
+			.catch((e) => {
+				if (mine === seq) error = errorMessage(e);
+			})
+			.finally(() => {
+				if (mine === seq) loading = false;
+			});
 	});
 </script>
 

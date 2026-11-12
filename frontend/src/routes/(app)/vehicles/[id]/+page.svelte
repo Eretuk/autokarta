@@ -6,7 +6,7 @@
 	import Plate from '$lib/components/Plate.svelte';
 	import Sheet from '$lib/components/Sheet.svelte';
 	import VehicleFields, { vehicleBody, type VehicleForm } from '$lib/components/VehicleFields.svelte';
-	import { formatDistance, formatMoney, vehicleName } from '$lib/format';
+	import { formatDistance, formatMoney, localToday, vehicleName } from '$lib/format';
 	import { formatDate, t } from '$lib/i18n/index.svelte';
 	import { parseReading, withLowerConfirm } from '$lib/odometer';
 	import { session } from '$lib/session.svelte';
@@ -21,7 +21,7 @@
 	const lastReading = $derived(v.odometer[0] ?? null);
 	const pastOwners = $derived(v.owners.filter((o) => o.ended_on !== null));
 	const unit = $derived(t(`units.${v.odometer_unit}`));
-	const today = () => new Date().toISOString().slice(0, 10);
+	const today = localToday;
 
 	// ----- new work order -----
 	let woOpen = $state(false);
@@ -273,7 +273,7 @@
 		<details>
 			<summary>{t('vehicles.pastOwners', { count: pastOwners.length })}</summary>
 			<ul class="plain">
-				{#each pastOwners as o (o.client_id + o.started_on)}
+				{#each pastOwners as o (o.id)}
 					<li>
 						{o.name}{#if o.phone}, {o.phone}{/if}
 						<span class="hint">

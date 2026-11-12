@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { api, errorMessage } from '$lib/api';
+	import { api, errorMessage, safeNext } from '$lib/api';
 	import PartFields, { emptyPartForm, partBody, partForm, type PartForm } from '$lib/components/PartFields.svelte';
 	import ScanButton from '$lib/components/ScanButton.svelte';
 	import { parseDecimal } from '$lib/format';
@@ -16,7 +16,7 @@
 	// Where to go after saving, e.g. back to the work order the part is for.
 	// Only paths inside the app, never another site.
 	const rawBack = params.get('back') ?? '';
-	const back = rawBack.startsWith('/') && !rawBack.startsWith('//') ? rawBack : '';
+	const back = safeNext(rawBack) === rawBack ? rawBack : '';
 
 	let form = $state<PartForm>(initialForm());
 

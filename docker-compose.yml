@@ -1,4 +1,4 @@
-# Production: app + PostgreSQL (+ optional daily backups). This file and .env
+# Production: app + PostgreSQL. This file and .env
 # next to it (template: .env.example) are all the server needs. The app
 # version is pinned here; settings and secrets come from .env, and a missing
 # one stops `docker compose` with a message naming it. HTTPS is terminated by
@@ -10,13 +10,6 @@ name: autokarta
 # often kept encrypted): to update, change it or download this file again from
 # the new release. CI checks it against the release tag.
 x-image: &image ghcr.io/eretuk/autokarta:0.2.2
-
-# How every service reaches the database.
-x-database: &database
-  PGHOST: db
-  PGUSER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
-  PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-  PGDATABASE: ${POSTGRES_DB:?set POSTGRES_DB in .env}
 
 services:
   db:
@@ -41,34 +34,29 @@ services:
     build: .
     restart: unless-stopped
     environment:
-      <<: *database
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      PGDATABASE: ${POSTGRES_DB:?set POSTGRES_DB in .env}
       # Only the host here: user, password and database come from the PG*
       # variables above, so any characters in the password work (a "/" or
       # "+" inside a URL breaks parsing).
       DATABASE_URL: postgres://db:5432
       # Always true in production: the browser talks HTTPS to the proxy.
       COOKIE_SECURE: "true"
+      # Optional settings with defaults (see .env.example), so installs from
+      # before they existed keep working.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-private}
+      UPDATE_CHECK: ${UPDATE_CHECK:-true}
     ports:
       - "${APP_BIND:?set APP_BIND in .env}:8080"
     depends_on:
       db:
         condition: service_healthy
-
-  # Daily pg_dump into <DATA_DIR>/backups. Enabled by COMPOSE_PROFILES=backup
-  # in .env; leave it out when the databases are backed up centrally.
-  backup:
-    image: *image
-    profiles: ["backup"]
-    restart: unless-stopped
-    # Root only to write into <DATA_DIR>/backups, which Docker creates as root.
-    user: root
-    entrypoint: ["autokarta-backup"]
-    environment:
-      <<: *database
-      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:?set BACKUP_KEEP_DAYS in .env}
-      BACKUP_TIME: ${BACKUP_TIME:?set BACKUP_TIME in .env}
-    volumes:
-      - ${DATA_DIR}/backups:/backups
-    depends_on:
-      db:
-        condition: service_healthy
+    # The image's HEALTHCHECK runs `autokarta healthcheck`; `docker compose ps`
+    # shows "healthy". Logs are capped: the first start prints a password.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

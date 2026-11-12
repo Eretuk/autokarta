@@ -9,9 +9,11 @@ pub struct AppState {
     pub db: PgPool,
     pub settings: Arc<Settings>,
     pub limiter: Arc<LoginLimiter>,
+    pub latest_release: crate::updates::LatestRelease,
 }
 
 pub struct Settings {
     pub cookie_secure: bool,
     pub session_ttl: time::Duration,
+    pub trusted_proxies: crate::client_ip::TrustedProxies,
 }

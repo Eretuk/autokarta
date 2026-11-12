@@ -66,6 +66,7 @@
 	/>
 	<ScanButton
 		onScan={(d) => {
+			search.cancel();
 			query = d.text.trim();
 			scannedQuery = true;
 			run(query, true);

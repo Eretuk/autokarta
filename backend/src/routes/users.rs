@@ -194,7 +194,7 @@ async fn reset_password(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    state.limiter.reset(&username);
+    state.limiter.reset_user(&username);
     tracing::info!(%username, "password reset by owner, signed out everywhere");
 
     Ok(StatusCode::NO_CONTENT)

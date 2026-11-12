@@ -16,6 +16,7 @@ use crate::{auth, state::AppState};
 
 struct Api {
     app: Router,
+    latest_release: crate::updates::LatestRelease,
 }
 
 struct Session(String);
@@ -27,9 +28,12 @@ impl Api {
             settings: Arc::new(crate::state::Settings {
                 cookie_secure: false,
                 session_ttl: time::Duration::days(1),
+                trusted_proxies: Default::default(),
             }),
             limiter: Arc::new(auth::LoginLimiter::default()),
+            latest_release: Default::default(),
         };
+        let latest_release = state.latest_release.clone();
         for (name, role) in [("boss", "owner"), ("mech", "mechanic")] {
             let hash = auth::hash_password("password-123".into()).await.unwrap();
             sqlx::query("INSERT INTO users (username, display_name, role, password_hash) VALUES ($1, $1, $2, $3)")
@@ -41,6 +45,7 @@ impl Api {
                 .unwrap();
         }
         Api {
+            latest_release,
             app: super::router(state, None),
         }
     }
@@ -99,6 +104,34 @@ impl Api {
 
 fn s(v: &Value) -> &str {
     v.as_str().unwrap()
+}
+
+#[sqlx::test]
+async fn owners_see_available_updates(db: PgPool) {
+    let api = Api::new(db).await;
+    let boss = api.login("boss").await;
+    let mech = api.login("mech").await;
+
+    // Before the first check (or with it turned off): just the version.
+    let (st, v) = api.call(&boss, "GET", "/api/version", None).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(s(&v["version"]), env!("CARGO_PKG_VERSION"));
+    assert_eq!(v["update_available"], false);
+    assert!(v.get("latest").is_none());
+
+    *api.latest_release.write().unwrap() = Some(crate::updates::Release {
+        version: "999.0.0".into(),
+        url: "https://example.com/release".into(),
+        published_at: None,
+    });
+    let (_, v) = api.call(&boss, "GET", "/api/version", None).await;
+    assert_eq!(v["update_available"], true);
+    assert_eq!(s(&v["latest"]["version"]), "999.0.0");
+
+    // Mechanics cannot update the server: they only see the version.
+    let (_, v) = api.call(&mech, "GET", "/api/version", None).await;
+    assert_eq!(v["update_available"], false);
+    assert!(v.get("latest").is_none());
 }
 
 #[sqlx::test]
@@ -269,6 +302,18 @@ async fn vehicle_search_and_identifiers(db: PgPool) {
         .await;
     assert_eq!(st, StatusCode::CONFLICT);
     assert_eq!(e["error"], "vin_taken");
+
+    // The same frame number typed without the dash is the same car.
+    let (st, e) = api
+        .call(
+            &mech,
+            "POST",
+            "/api/vehicles",
+            Some(json!({"frame_number": "GX1001234567"})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CONFLICT);
+    assert_eq!(e["error"], "frame_number_taken");
 
     for q in ["wa12345", "WA-123", "t923-07", "GX1001234567", "yaris"] {
         let (_, found) = api

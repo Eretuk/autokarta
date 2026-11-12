@@ -185,6 +185,7 @@ async fn create(
     };
 
     let mut tx = state.db.begin().await?;
+    ensure_frame_number_free(&mut tx, v.frame_number.as_deref(), None).await?;
     let id: Uuid = sqlx::query_scalar(
         "INSERT INTO vehicles (vin, frame_number, plate, make, model, year, engine, note, role, odometer_unit)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -230,6 +231,8 @@ async fn update(
     Json(req): Json<VehicleInput>,
 ) -> AppResult<Json<VehicleDetail>> {
     let v = clean_vehicle(&req)?;
+    let mut tx = state.db.begin().await?;
+    ensure_frame_number_free(&mut tx, v.frame_number.as_deref(), Some(id)).await?;
     let updated = sqlx::query(
         "UPDATE vehicles SET vin = $2, frame_number = $3, plate = $4, make = $5, model = $6,
                              year = $7, engine = $8, note = $9, role = $10,
@@ -247,13 +250,46 @@ async fn update(
     .bind(&v.note)
     .bind(&v.role)
     .bind(&v.odometer_unit)
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await
     .map_err(|e| conflict_on(e, UNIQUE))?;
     if updated.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
+    tx.commit().await?;
     Ok(Json(load_detail(&state, id, &user).await?))
+}
+
+/// The unique index compares frame numbers as written, but people type
+/// "GX100-1234567" and "GX1001234567" for the same car. Checked here rather
+/// than in a new index so existing data with such pairs keeps working; the
+/// advisory lock makes two simultaneous inserts of one number wait.
+async fn ensure_frame_number_free(
+    conn: &mut PgConnection,
+    frame_number: Option<&str>,
+    except: Option<Uuid>,
+) -> AppResult<()> {
+    let Some(frame) = frame_number else {
+        return Ok(());
+    };
+    let key = frame.replace('-', "");
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('autokarta_frame:' || $1))")
+        .bind(&key)
+        .execute(&mut *conn)
+        .await?;
+    let taken: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM vehicles
+                         WHERE replace(frame_number, '-', '') = $1
+                           AND ($2::uuid IS NULL OR id <> $2))",
+    )
+    .bind(&key)
+    .bind(except)
+    .fetch_one(conn)
+    .await?;
+    if taken {
+        return Err(AppError::Conflict("frame_number_taken"));
+    }
+    Ok(())
 }
 
 async fn ensure_client(conn: &mut PgConnection, id: Uuid) -> AppResult<()> {
@@ -502,6 +538,7 @@ struct VehicleRow {
 
 #[derive(Serialize, sqlx::FromRow)]
 struct Ownership {
+    id: Uuid,
     client_id: Uuid,
     name: String,
     phone: Option<String>,
@@ -560,7 +597,7 @@ async fn load_detail(state: &AppState, id: Uuid, user: &CurrentUser) -> AppResul
     .ok_or(AppError::NotFound)?;
 
     let owners = sqlx::query_as::<_, Ownership>(
-        "SELECT o.client_id, c.name, c.phone, o.started_on, o.ended_on
+        "SELECT o.id, o.client_id, c.name, c.phone, o.started_on, o.ended_on
            FROM vehicle_ownerships o JOIN clients c ON c.id = o.client_id
           WHERE o.vehicle_id = $1
           ORDER BY o.ended_on IS NULL DESC, o.started_on DESC",

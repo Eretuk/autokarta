@@ -10,6 +10,7 @@
 	import { onMount } from 'svelte';
 	import { redirectToLogin, setUnauthorizedHandler } from '$lib/api';
 	import { i18n } from '$lib/i18n/index.svelte';
+	import { registerServiceWorker } from '$lib/pwa.svelte';
 	import { session } from '$lib/session.svelte';
 
 	let { children } = $props();
@@ -23,11 +24,8 @@
 		document.documentElement.lang = i18n.locale;
 	});
 
-	onMount(async () => {
-		if (import.meta.env.PROD) {
-			const { registerSW } = await import('virtual:pwa-register');
-			registerSW({ immediate: true });
-		}
+	onMount(() => {
+		if (import.meta.env.PROD) registerServiceWorker();
 	});
 </script>
 

@@ -1,49 +1,47 @@
 #!/bin/sh
-# Daily pg_dump with rotation. Built into the app image as `autokarta-backup`
-# and run by the "backup" service in docker-compose.yml.
+# Example backup job for the host, not part of the containers: one pg_dump
+# through the running `db` service into BACKUP_DIR, with rotation. Use it
+# from cron if you have no backup tool of your own, e.g.
 #
-# Dumps land in <DATA_DIR>/backups on the host. This protects against
-# mistakes and a broken database, NOT against losing the server: copy the
-# dumps off-site too (see README, "Backups").
+#   sudo install -m 700 backup.sh /opt/docker/autokarta/backup.sh
+#   sudo crontab -e
+#   30 3 * * * /opt/docker/autokarta/backup.sh >> /var/log/autokarta-backup.log 2>&1
+#
+# Exits non-zero when the dump failed, so cron mail or monitoring notices.
+# Dumps contain personal data: they are created readable by root only.
+# Local dumps do not survive losing the server: copy them off-site as well.
 set -eu
+umask 077
 
-if [ ! -w /backups ]; then
-	echo "backup: /backups is not writable; mount a host directory there" >&2
-	exit 1
-fi
+COMPOSE_DIR=${COMPOSE_DIR:-/opt/docker/autokarta}
+BACKUP_DIR=${BACKUP_DIR:-$COMPOSE_DIR/backups}
+KEEP_DAYS=${KEEP_DAYS:-14}
 
-: "${BACKUP_KEEP_DAYS:=14}"
-: "${BACKUP_TIME:=03:30}"
+case $KEEP_DAYS in
+'' | *[!0-9]* | 0)
+	echo "backup: KEEP_DAYS must be a whole number of days, at least 1" >&2
+	exit 2
+	;;
+esac
 
-backup() {
-	stamp=$(date +%Y%m%d-%H%M%S)
-	tmp="/backups/.autokarta-$stamp.dump.partial"
-	out="/backups/autokarta-$stamp.dump"
-	if pg_dump --format=custom --compress=9 --file="$tmp"; then
-		mv "$tmp" "$out"
-		echo "backup: wrote $out ($(du -h "$out" | cut -f1))"
-		find /backups -name 'autokarta-*.dump' -type f -mtime "+$BACKUP_KEEP_DAYS" -print -delete
-	else
-		rm -f "$tmp"
-		echo "backup: pg_dump FAILED" >&2
-	fi
-}
+mkdir -p "$BACKUP_DIR"
+stamp=$(date -u +%Y%m%d-%H%M%S)
+tmp="$BACKUP_DIR/.autokarta-$stamp.dump.partial"
+out="$BACKUP_DIR/autokarta-$stamp.dump"
+# A failed or interrupted dump leaves nothing that looks like a backup.
+trap 'rm -f "$tmp"' EXIT
+trap 'exit 1' INT TERM
 
-seconds_until() {
-	now=$(date +%s)
-	target=$(date -d "$(date +%Y-%m-%d) $1" +%s 2>/dev/null || date -D '%Y-%m-%d %H:%M' -d "$(date +%Y-%m-%d) $1" +%s)
-	[ "$target" -le "$now" ] && target=$((target + 86400))
-	echo $((target - now))
-}
+cd "$COMPOSE_DIR"
+# pg_dump inside the db container always matches the server version.
+docker compose exec -T db sh -c \
+	'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --compress=9' >"$tmp"
+# A dump that pg_restore cannot read is not a backup.
+docker compose exec -T db pg_restore --list <"$tmp" >/dev/null
+mv "$tmp" "$out"
+echo "backup: wrote $out ($(du -h "$out" | cut -f1))"
 
-# "now" runs a single backup and exits: docker compose run --rm backup now
-if [ "${1:-}" = "now" ]; then
-	backup
-	exit 0
-fi
-
-echo "backup: daily at $BACKUP_TIME, keeping $BACKUP_KEEP_DAYS days"
-while true; do
-	sleep "$(seconds_until "$BACKUP_TIME")"
-	backup
-done
+# -mtime +N matches files at least N+1 whole days old.
+find "$BACKUP_DIR" -name 'autokarta-*.dump' -type f -mtime "+$((KEEP_DAYS - 1))" -print -delete
+# Leftovers of a run killed hard (power loss), where the trap never ran.
+find "$BACKUP_DIR" -name '.autokarta-*.dump.partial' -type f -mmin +1440 -delete

@@ -30,6 +30,7 @@ export interface VehicleSummary {
 }
 
 export interface Ownership {
+	id: string;
 	client_id: string;
 	name: string;
 	phone: string | null;
@@ -175,4 +176,11 @@ export interface PartDetail {
 	stock_milli: number;
 	barcodes: string[];
 	movements: StockMovement[];
+}
+
+/** GET /version. `latest` only for owners, once the server checked GitHub. */
+export interface VersionInfo {
+	version: string;
+	latest?: { version: string; url: string; published_at: string | null };
+	update_available: boolean;
 }

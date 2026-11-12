@@ -18,17 +18,33 @@
 	let error = $state('');
 	let busy = $state(false);
 
-	const search = debounce(async (q: string) => {
-		if (!q.trim()) {
+	const labelId = $props.id();
+	let seq = 0;
+
+	async function run(q: string) {
+		const mine = ++seq;
+		try {
+			const rows = await api<Client[]>('GET', `/clients?q=${encodeURIComponent(q)}`);
+			if (mine !== seq) return; // a newer search already started
+			results = rows;
+			error = '';
+		} catch (e) {
+			if (mine === seq) error = errorMessage(e);
+		}
+	}
+	const search = debounce(run, 250);
+
+	function onInput() {
+		if (!query.trim()) {
+			// Cleared field: drop pending and in-flight searches.
+			search.cancel();
+			seq++;
 			results = [];
+			error = '';
 			return;
 		}
-		try {
-			results = await api<Client[]>('GET', `/clients?q=${encodeURIComponent(q)}`);
-		} catch (e) {
-			error = errorMessage(e);
-		}
-	}, 250);
+		search(query);
+	}
 
 	function startCreate() {
 		// Whatever was typed is most likely the name (or a phone number).
@@ -57,7 +73,7 @@
 </script>
 
 <div class="picker">
-	<span class="label">{label}</span>
+	<span class="label" id={labelId}>{label}</span>
 	{#if error}<div class="notice error" role="alert">{error}</div>{/if}
 
 	{#if selected}
@@ -86,7 +102,8 @@
 		<input
 			type="search"
 			bind:value={query}
-			oninput={() => search(query)}
+			oninput={onInput}
+			aria-labelledby={labelId}
 			placeholder={t('clients.searchPlaceholder')}
 			autocomplete="off"
 		/>

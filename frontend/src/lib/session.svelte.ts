@@ -25,6 +25,7 @@ export async function loadSession(): Promise<User | null> {
 	if (session.user) return session.user;
 	try {
 		setUser(await api<User>('GET', '/auth/me'));
+		lastRefresh = Date.now();
 	} catch (e) {
 		if (e instanceof ApiError && e.status === 401) {
 			session.user = null;
@@ -33,6 +34,31 @@ export async function loadSession(): Promise<User | null> {
 		}
 	}
 	return session.user;
+}
+
+const REFRESH_EVERY_MS = 60_000;
+let lastRefresh = 0;
+
+/**
+ * Re-reads the signed-in user (role, name, forced password change), at most
+ * once a minute. `loadSession` keeps the user for the life of the tab, so
+ * without this a demoted owner would keep the owner screens until a reload.
+ * A revoked session is handled by the 401 handler in `api`.
+ */
+export async function refreshSession() {
+	if (!session.user || Date.now() - lastRefresh < REFRESH_EVERY_MS) return;
+	lastRefresh = Date.now();
+	try {
+		const user = await api<User>('GET', '/auth/me');
+		if (session.user) setUser(user);
+	} catch (e) {
+		// /auth/me does not trigger the 401 handler: sign out here.
+		if (e instanceof ApiError && e.status === 401 && session.user) {
+			session.user = null;
+			location.assign('/login');
+		}
+		// Offline or a server hiccup: keep what we have.
+	}
 }
 
 // The password typed on the login page, kept in memory only until /welcome

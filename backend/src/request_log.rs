@@ -5,28 +5,48 @@
 //! Query strings are left out on purpose: searches carry names, phones and
 //! plates, which do not belong in logs.
 
-use std::{net::SocketAddr, time::Instant};
+use std::{
+    net::{IpAddr, SocketAddr},
+    time::Instant,
+};
 
 use argon2::password_hash::rand_core::{OsRng, RngCore};
 use axum::{
-    extract::{ConnectInfo, Request},
-    http::{HeaderMap, HeaderValue},
+    extract::{ConnectInfo, Request, State},
+    http::HeaderValue,
     middleware::Next,
     response::Response,
 };
 use tracing::{field::Empty, Instrument, Level};
+
+use crate::state::AppState;
 
 /// The error code of a failed request, put into the response by `AppError`
 /// so the request line can show why it failed.
 #[derive(Clone)]
 pub struct ErrorCode(pub String);
 
-pub async fn log_requests(req: Request, next: Next) -> Response {
+/// The client's address as resolved here (see `client_ip`), for handlers
+/// that need it, such as the login rate limiter. `None` without a socket
+/// (tests).
+#[derive(Clone, Copy)]
+pub struct ClientIp(pub Option<IpAddr>);
+
+pub async fn log_requests(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
     let id = format!("{:08x}", OsRng.next_u32());
     let span = tracing::info_span!("req", %id, ip = Empty, user = Empty);
-    if let Some(ip) = client_ip(&req) {
+    let peer = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|c| c.0.ip());
+    let ip = state
+        .settings
+        .trusted_proxies
+        .client_ip(peer, req.headers());
+    if let Some(ip) = ip {
         span.record("ip", tracing::field::display(ip));
     }
+    req.extensions_mut().insert(ClientIp(ip));
 
     let method = req.method().clone();
     let path = req.uri().path().to_owned();
@@ -70,48 +90,7 @@ pub async fn log_requests(req: Request, next: Next) -> Response {
     res
 }
 
-/// The app runs behind a reverse proxy, which appends the address it saw to
-/// `X-Forwarded-For`: the last entry is the one added by our proxy (earlier
-/// ones come from the client and can be anything). Without the header, the
-/// direct peer.
-fn client_ip(req: &Request) -> Option<String> {
-    forwarded_for(req.headers()).or_else(|| {
-        req.extensions()
-            .get::<ConnectInfo<SocketAddr>>()
-            .map(|c| c.0.ip().to_string())
-    })
-}
-
-fn forwarded_for(headers: &HeaderMap) -> Option<String> {
-    let last = headers
-        .get_all("x-forwarded-for")
-        .iter()
-        .filter_map(|v| v.to_str().ok())
-        .flat_map(|v| v.split(','))
-        .map(str::trim)
-        .rfind(|v| !v.is_empty())?;
-    Some(last.chars().take(64).collect())
-}
-
 /// Names the signed-in user in the current request's log span.
 pub fn record_user(username: &str) {
     tracing::Span::current().record("user", tracing::field::display(username));
-}
-
-#[cfg(test)]
-mod tests {
-    use axum::http::{HeaderMap, HeaderValue};
-
-    #[test]
-    fn forwarded_for_takes_the_last_hop() {
-        let mut h = HeaderMap::new();
-        assert_eq!(super::forwarded_for(&h), None);
-        h.append(
-            "x-forwarded-for",
-            HeaderValue::from_static("1.1.1.1, 10.0.0.9"),
-        );
-        assert_eq!(super::forwarded_for(&h).as_deref(), Some("10.0.0.9"));
-        h.append("x-forwarded-for", HeaderValue::from_static("203.0.113.7"));
-        assert_eq!(super::forwarded_for(&h).as_deref(), Some("203.0.113.7"));
-    }
 }

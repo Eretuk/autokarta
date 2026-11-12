@@ -1,10 +1,12 @@
 //! Autokarta: workshop, parts and fleet management for small auto services.
 
 mod auth;
+mod client_ip;
 mod error;
 mod request_log;
 mod routes;
 mod state;
+mod updates;
 mod validate;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
@@ -19,9 +21,9 @@ use crate::state::{AppState, Settings};
 #[derive(Parser)]
 #[command(name = "autokarta", version, about)]
 struct Cli {
-    /// PostgreSQL connection string.
+    /// PostgreSQL connection string (not needed by `healthcheck`).
     #[arg(long, env = "DATABASE_URL")]
-    database_url: String,
+    database_url: Option<String>,
 
     #[command(flatten)]
     serve: ServeArgs,
@@ -48,12 +50,26 @@ struct ServeArgs {
     /// How long a login stays valid, in days.
     #[arg(long, env = "SESSION_TTL_DAYS", default_value_t = 30)]
     session_ttl_days: i64,
+
+    /// Reverse proxies whose X-Forwarded-For is believed: comma-separated
+    /// addresses or CIDR networks; `private` = loopback and private
+    /// networks, `none` = never. Everyone else's header is ignored, so a
+    /// client reaching the app directly cannot fake its address.
+    #[arg(long, env = "TRUSTED_PROXIES", default_value = "private")]
+    trusted_proxies: client_ip::TrustedProxies,
+
+    /// Ask GitHub twice a day whether a newer release exists, to tell the
+    /// owner in the app. Sends nothing but the app version.
+    #[arg(long, env = "UPDATE_CHECK", default_value_t = true, action = clap::ArgAction::Set)]
+    update_check: bool,
 }
 
 #[derive(Subcommand)]
 enum Command {
     /// Run the web server (default).
     Serve,
+    /// Exit 0 if the server on BIND_ADDR answers /api/health (for Docker).
+    Healthcheck,
     /// Create an owner account (e.g. to regain access). Prompts for a password.
     CreateAdmin {
         #[arg(long)]
@@ -78,12 +94,16 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
+    if let Some(Command::Healthcheck) = cli.command {
+        return healthcheck(cli.serve.bind).await;
+    }
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "autokarta starting");
 
+    let database_url = cli.database_url.context("DATABASE_URL is not set")?;
     let db = PgPoolOptions::new()
         .max_connections(10)
         .acquire_timeout(Duration::from_secs(10))
-        .connect(&cli.database_url)
+        .connect(&database_url)
         .await
         .context("cannot connect to the database")?;
 
@@ -95,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command.unwrap_or(Command::Serve) {
         Command::Serve => serve(db, cli.serve).await,
+        Command::Healthcheck => unreachable!("handled before connecting"),
         Command::CreateAdmin {
             username,
             display_name,
@@ -108,14 +129,22 @@ async fn serve(db: sqlx::PgPool, args: ServeArgs) -> anyhow::Result<()> {
         settings: Arc::new(Settings {
             cookie_secure: args.cookie_secure,
             session_ttl: time::Duration::days(args.session_ttl_days),
+            trusted_proxies: args.trusted_proxies,
         }),
         limiter: Arc::new(auth::LoginLimiter::default()),
+        latest_release: Default::default(),
     };
 
     if let Some(password) = auth::create_first_owner(&state.db).await? {
         print_first_owner(&password);
     }
     tokio::spawn(auth::cleanup_expired_sessions(state.db.clone()));
+    if args.update_check {
+        // ring, not rustls' default aws-lc: no cmake/C toolchain needed to
+        // cross-build for arm64.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        tokio::spawn(updates::watch(state.latest_release.clone()));
+    }
 
     let static_dir = args
         .static_dir
@@ -194,6 +223,34 @@ async fn create_admin(
         }
         Err(e) => Err(e.into()),
     }
+}
+
+/// A plain HTTP/1.1 request over TCP: the runtime image has no curl, and an
+/// HTTP client crate for one request is not worth it.
+async fn healthcheck(bind: SocketAddr) -> anyhow::Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let ip = match bind.ip() {
+        ip if !ip.is_unspecified() => ip,
+        std::net::IpAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
+        std::net::IpAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
+    };
+    let check = async {
+        let mut stream = tokio::net::TcpStream::connect((ip, bind.port())).await?;
+        stream
+            .write_all(b"GET /api/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .await?;
+        let mut head = [0u8; 12];
+        stream.read_exact(&mut head).await?;
+        anyhow::Ok(head)
+    };
+    let head = tokio::time::timeout(Duration::from_secs(5), check)
+        .await
+        .context("health check timed out")??;
+    if !head.starts_with(b"HTTP/1.1 200") {
+        bail!("unhealthy: {}", String::from_utf8_lossy(&head));
+    }
+    Ok(())
 }
 
 async fn shutdown_signal() {

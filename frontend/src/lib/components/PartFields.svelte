@@ -84,6 +84,8 @@
 		currency,
 		showPrice
 	}: { form: PartForm; currency: string; showPrice: boolean } = $props();
+	// Labels for the button groups (several forms can be on one page).
+	const uid = $props.id();
 
 	const UNITS: PartUnit[] = ['pcs', 'l', 'kg', 'm'];
 	const CONDITIONS: PartCondition[] = ['new', 'used'];
@@ -101,8 +103,8 @@
 	/>
 </label>
 
-<span class="label">{t('parts.condition')}</span>
-<div class="segmented field-gap">
+<span class="label" id="{uid}-condition">{t('parts.condition')}</span>
+<div class="segmented field-gap" role="group" aria-labelledby="{uid}-condition">
 	{#each CONDITIONS as c (c)}
 		<button type="button" class="btn" aria-pressed={form.condition === c} onclick={() => (form.condition = c)}
 			>{t(`parts.conditions.${c}`)}</button
@@ -135,8 +137,8 @@
 	/>
 </label>
 
-<span class="label">{t('parts.unit')}</span>
-<div class="segmented field-gap">
+<span class="label" id="{uid}-unit">{t('parts.unit')}</span>
+<div class="segmented field-gap" role="group" aria-labelledby="{uid}-unit">
 	{#each UNITS as u (u)}
 		<button type="button" class="btn" aria-pressed={form.unit === u} onclick={() => (form.unit = u)}
 			>{t(`units.${u}`)}</button

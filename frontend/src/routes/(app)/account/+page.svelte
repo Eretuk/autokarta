@@ -7,6 +7,7 @@
 	import { setTheme, theme, THEMES } from '$lib/theme.svelte';
 	import { business, setBusinessSettings } from '$lib/settings.svelte';
 	import type { BusinessSettings, DistanceUnit } from '$lib/types';
+	import { appVersion } from '$lib/version.svelte';
 
 	const UNITS: DistanceUnit[] = ['km', 'mi'];
 	let biz = $state({ currency: business.currency, distance_unit: business.distance_unit });
@@ -15,12 +16,21 @@
 
 	async function saveBusiness(e: SubmitEvent) {
 		e.preventDefault();
+		const currency = biz.currency.trim().toUpperCase();
+		// Amounts are stored without a currency: a change relabels every
+		// existing price instead of converting it.
+		if (
+			currency !== business.currency &&
+			!confirm(t('settings.confirmCurrency', { from: business.currency, to: currency }))
+		) {
+			return;
+		}
 		bizBusy = true;
 		bizMsg = null;
 		try {
 			setBusinessSettings(
 				await api<BusinessSettings>('PATCH', '/settings', {
-					currency: biz.currency.trim().toUpperCase(),
+					currency,
 					distance_unit: biz.distance_unit
 				})
 			);
@@ -180,9 +190,9 @@
 				<span class="hint">{t('settings.currencyHint')}</span>
 				<input type="text" bind:value={biz.currency} maxlength="3" autocapitalize="characters" autocomplete="off" required />
 			</label>
-			<span class="label">{t('settings.distanceUnit')}</span>
+			<span class="label" id="distance-unit-label">{t('settings.distanceUnit')}</span>
 			<p class="hint">{t('settings.distanceUnitHint')}</p>
-			<div class="segmented spaced-b">
+			<div class="segmented spaced-b" role="group" aria-labelledby="distance-unit-label">
 				{#each UNITS as u (u)}
 					<button type="button" class="btn" aria-pressed={biz.distance_unit === u} onclick={() => (biz.distance_unit = u)}
 						>{t(`units.${u}`)}</button
@@ -199,6 +209,23 @@
 	<p class="hint">{t('scanner.intro')}</p>
 	<a class="btn" href="/scanner">{t('scanner.open')}</a>
 </section>
+
+{#if appVersion.info}
+	{@const info = appVersion.info}
+	<section class="card">
+		<h2>{t('account.about')}</h2>
+		<p>{t('account.version', { version: info.version })}</p>
+		{#if info.update_available && info.latest}
+			<div class="notice" role="status">
+				<p><strong>{t('account.newVersion', { version: info.latest.version })}</strong></p>
+				<p class="hint">{t('account.updateHint')}</p>
+				<a href={info.latest.url} target="_blank" rel="noopener noreferrer">{t('account.releaseNotes')}</a>
+			</div>
+		{:else if info.latest}
+			<p class="hint">{t('account.upToDate')}</p>
+		{/if}
+	</section>
+{/if}
 
 <button class="btn danger block" type="button" onclick={signOut}>{t('account.signOut')}</button>
 
