@@ -588,7 +588,7 @@
 		"receiptNumber": "Numer paragonu",
 		"documentDate": "Data",
 		"noteNone": "Skąd pochodzi",
-		"invoiceMissing": "Przed przyjęciem uzupełnij i zapisz: {fields}."
+		"invoiceMissing": "Przed przyjęciem uzupełnij: {fields}."
 	},
 	"stockCount": {
 		"title": "Inwentaryzacja",

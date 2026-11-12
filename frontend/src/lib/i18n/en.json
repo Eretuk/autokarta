@@ -572,7 +572,7 @@
 		"receiptNumber": "Receipt number",
 		"documentDate": "Date",
 		"noteNone": "Where it came from",
-		"invoiceMissing": "Before posting, fill in and save: {fields}."
+		"invoiceMissing": "Before posting, fill in: {fields}."
 	},
 	"stockCount": {
 		"title": "Stock count",

@@ -29,16 +29,6 @@
 
 	let error = $state('');
 
-	/** An invoice goes on stock only with its issuer and number (as saved). */
-	const missing = $derived(
-		d.document_type === 'invoice'
-			? [
-					...(d.supplier_id ? [] : [t('deliveries.supplier')]),
-					...(d.invoice_number ? [] : [t('deliveries.invoiceNumber')])
-				]
-			: []
-	);
-
 	// ----- header -----
 	let docType = $state<DocumentType>('invoice');
 	let supplier = $state<Supplier | null>(null);
@@ -48,6 +38,26 @@
 	let note = $state('');
 	let hBusy = $state(false);
 	let hMsg = $state<{ ok: boolean; text: string } | null>(null);
+
+	/** An invoice goes on stock only with its issuer and number. Judged by
+	 *  the form, not the saved header: posting saves the header first. */
+	const missing = $derived(
+		docType === 'invoice'
+			? [
+					...(supplier ? [] : [t('deliveries.supplier')]),
+					...(invoiceNumber.trim() ? [] : [t('deliveries.invoiceNumber')])
+				]
+			: []
+	);
+
+	const headerDirty = $derived(
+		docType !== d.document_type ||
+			(supplier?.id ?? null) !== d.supplier_id ||
+			invoiceNumber.trim() !== (d.invoice_number ?? '') ||
+			invoiceDate !== d.invoice_date ||
+			invoiceTotal.trim() !== moneyInput(d.invoice_total_net_minor, d.currency) ||
+			note.trim() !== (d.note ?? '')
+	);
 
 	function fillHeader(x: DeliveryDetail) {
 		docType = x.document_type;
@@ -64,12 +74,17 @@
 
 	async function saveHeader(e: SubmitEvent) {
 		e.preventDefault();
+		if (await writeHeader()) hMsg = { ok: true, text: t('deliveries.headerSaved') };
+	}
+
+	/** Saves the header form; on failure shows why next to it. */
+	async function writeHeader(): Promise<boolean> {
 		let total: number | null = null;
 		if (invoiceTotal.trim()) {
 			total = parseMoney(invoiceTotal, currency);
 			if (total === null) {
 				hMsg = { ok: false, text: t('errors.invalid_price') };
-				return;
+				return false;
 			}
 		}
 		hBusy = true;
@@ -84,9 +99,10 @@
 				note: note.trim() || null
 			});
 			fillHeader(d);
-			hMsg = { ok: true, text: t('deliveries.headerSaved') };
+			return true;
 		} catch (err) {
 			hMsg = { ok: false, text: errorMessage(err) };
+			return false;
 		} finally {
 			hBusy = false;
 		}
@@ -340,7 +356,18 @@
 	let postError = $state('');
 	let postBusy = $state(false);
 
-	function openPost() {
+	async function openPost() {
+		// Typed into the header but not saved: save it now instead of
+		// asking for a second button press.
+		if (headerDirty) {
+			aBusy = true;
+			const ok = await writeHeader();
+			aBusy = false;
+			if (!ok) {
+				document.querySelector('.card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+				return;
+			}
+		}
 		const seen = new Set<string>();
 		priceRows = [];
 		for (const i of d.items) {

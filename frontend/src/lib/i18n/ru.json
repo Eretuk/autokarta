@@ -588,7 +588,7 @@
 		"receiptNumber": "Номер чека",
 		"documentDate": "Дата",
 		"noteNone": "Откуда деталь",
-		"invoiceMissing": "Перед проведением заполните и сохраните: {fields}."
+		"invoiceMissing": "Перед проведением заполните: {fields}."
 	},
 	"stockCount": {
 		"title": "Инвентаризация",
