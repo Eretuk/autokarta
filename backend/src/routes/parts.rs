@@ -19,6 +19,7 @@ use uuid::Uuid;
 use crate::{
     auth::{CurrentUser, Owner},
     error::{conflict_on, AppError, AppResult},
+    fifo,
     routes::{deserialize_some, like_pattern},
     state::AppState,
     validate,
@@ -534,6 +535,10 @@ pub struct PartDetail {
     barcodes: Vec<String>,
     /// Latest first, at most 100.
     movements: Vec<Movement>,
+    /// Owners only: the pieces on the shelf by purchase, oldest (next to
+    /// go out) first, for pricing a part at cost.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fifo_layers: Option<Vec<fifo::Layer>>,
 }
 
 async fn detail(
@@ -595,9 +600,21 @@ async fn load_detail(state: &AppState, id: Uuid, user: &CurrentUser) -> AppResul
         part.last_cost_vat_percent = None;
         movements.iter_mut().for_each(|m| m.unit_cost_minor = None);
     }
+    let fifo_layers = if user.is_owner() {
+        Some(
+            fifo::for_parts(&state.db, &[id])
+                .await?
+                .remove(&id)
+                .map(|v| v.layers)
+                .unwrap_or_default(),
+        )
+    } else {
+        None
+    };
     Ok(PartDetail {
         part,
         barcodes,
         movements,
+        fifo_layers,
     })
 }

@@ -17,8 +17,12 @@
 
 use std::collections::{HashMap, VecDeque};
 
+use serde::Serialize;
+use sqlx::Postgres;
 use time::OffsetDateTime;
 use uuid::Uuid;
+
+use crate::error::AppResult;
 
 /// One stock movement of the part, as recorded.
 pub struct Move {
@@ -44,6 +48,15 @@ pub struct Valuation {
     /// One per moment asked for, in the same order: movements recorded
     /// strictly before it count.
     pub snapshots: Vec<Snapshot>,
+    /// What is on the shelf after the last movement, oldest first: the next
+    /// pieces to go out. Empty if the part never had a cost.
+    pub layers: Vec<Layer>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Layer {
+    pub quantity_milli: i64,
+    pub unit_cost_minor: i64,
 }
 
 /// Cost per milli-unit summed up: quantity_milli × unit cost.
@@ -156,10 +169,61 @@ pub fn value(moves: &[Move], moments: &[OffsetDateTime]) -> Valuation {
             (m.id, valued.then(|| round_milli(cost)))
         })
         .collect();
+    let layers = if valued {
+        layers
+            .into_iter()
+            .map(|(q, c)| Layer {
+                quantity_milli: q,
+                unit_cost_minor: c,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     Valuation {
         out_cost,
         snapshots,
+        layers,
     }
+}
+
+/// Valuations of the given parts as they stand now.
+pub async fn for_parts<'e, E>(db: E, part_ids: &[Uuid]) -> AppResult<HashMap<Uuid, Valuation>>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: Uuid,
+        part_id: Uuid,
+        quantity_milli: i64,
+        unit_cost_minor: Option<i64>,
+        created_at: OffsetDateTime,
+    }
+    let rows = sqlx::query_as::<_, Row>(
+        "SELECT id, part_id, quantity_milli, unit_cost_minor, created_at
+           FROM stock_movements
+          WHERE part_id = ANY($1)
+          ORDER BY part_id, created_at, id",
+    )
+    .bind(part_ids)
+    .fetch_all(db)
+    .await?;
+    Ok(rows
+        .chunk_by(|a, b| a.part_id == b.part_id)
+        .map(|chunk| {
+            let moves: Vec<Move> = chunk
+                .iter()
+                .map(|r| Move {
+                    id: r.id,
+                    at: r.created_at,
+                    quantity_milli: r.quantity_milli,
+                    unit_cost_minor: r.unit_cost_minor,
+                })
+                .collect();
+            (chunk[0].part_id, value(&moves, &[]))
+        })
+        .collect())
 }
 
 #[cfg(test)]
@@ -191,6 +255,19 @@ mod tests {
         ];
         let v = value(&moves, &[t(5)]);
         assert_eq!(v.out_cost[&moves[3].id], Some(5600));
+        assert_eq!(
+            v.layers,
+            [
+                Layer {
+                    quantity_milli: 1000,
+                    unit_cost_minor: 8000
+                },
+                Layer {
+                    quantity_milli: 1000,
+                    unit_cost_minor: 10000
+                }
+            ]
+        );
         assert_eq!(
             v.snapshots[0],
             Snapshot {

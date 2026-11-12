@@ -19,6 +19,7 @@ use uuid::Uuid;
 use crate::{
     auth::CurrentUser,
     error::{AppError, AppResult},
+    fifo,
     routes::{clients::Client, deserialize_some, parts, settings, vehicles},
     state::AppState,
     validate,
@@ -534,6 +535,14 @@ struct Item {
     #[sqlx(skip)]
     #[serde(skip_serializing_if = "Option::is_none")]
     line_total_minor: Option<i64>,
+    /// The stock movement a part line owns.
+    #[serde(skip)]
+    movement_id: Option<Uuid>,
+    /// Owners only: net purchase cost of the pieces it took, first in,
+    /// first out (`null` if the part has no cost at all).
+    #[sqlx(skip)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cost_minor: Option<Option<i64>>,
 }
 
 /// Owners only: sum of priced lines and how many lines still lack a price.
@@ -611,14 +620,29 @@ async fn load_detail(state: &AppState, id: Uuid, user: &CurrentUser) -> AppResul
 
     let mut items = sqlx::query_as::<_, Item>(
         "SELECT i.id, i.kind, i.description, i.quantity_milli, i.unit_price_minor,
-                i.part_id, p.part_number, p.brand, p.condition, p.unit
-           FROM work_order_items i LEFT JOIN parts p ON p.id = i.part_id
+                i.part_id, p.part_number, p.brand, p.condition, p.unit, m.id AS movement_id
+           FROM work_order_items i
+           LEFT JOIN parts p ON p.id = i.part_id
+           LEFT JOIN stock_movements m ON m.work_order_item_id = i.id
           WHERE i.work_order_id = $1
           ORDER BY i.created_at, i.id",
     )
     .bind(id)
     .fetch_all(&state.db)
     .await?;
+
+    if user.is_owner() {
+        let parts: Vec<Uuid> = items.iter().filter_map(|i| i.part_id).collect();
+        if !parts.is_empty() {
+            let valued = fifo::for_parts(&state.db, &parts).await?;
+            for item in &mut items {
+                let (Some(part), Some(mv)) = (item.part_id, item.movement_id) else {
+                    continue;
+                };
+                item.cost_minor = valued.get(&part).and_then(|v| v.out_cost.get(&mv).copied());
+            }
+        }
+    }
 
     let totals = if user.is_owner() {
         let mut total = 0i64;

@@ -88,6 +88,8 @@ export interface WorkOrderItem {
 	unit?: PartUnit;
 	unit_price_minor?: number;
 	line_total_minor?: number;
+	/** Owners only: net purchase cost of the pieces it took (FIFO). */
+	cost_minor?: number | null;
 }
 
 export interface WorkOrderDetail {
@@ -197,6 +199,8 @@ export interface PartDetail {
 	last_cost_vat_percent?: number | null;
 	barcodes: string[];
 	movements: StockMovement[];
+	/** Owners only: pieces on the shelf by purchase, next to go out first. */
+	fifo_layers?: { quantity_milli: number; unit_cost_minor: number }[];
 }
 
 /** GET /version. `latest` only for owners, once the server checked GitHub. */

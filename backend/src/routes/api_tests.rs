@@ -1323,6 +1323,28 @@ async fn monthly_report_counts_purchases_use_and_stock(db: PgPool) {
     )
     .await;
 
+    // The owner sees what the line cost (FIFO) and what is left by purchase,
+    // to price a part at cost; a mechanic sees neither.
+    let wo_url = format!("/api/work-orders/{}", s(&wo["id"]));
+    let (_, o) = api.call(&boss, "GET", &wo_url, None).await;
+    assert_eq!(o["items"][0]["cost_minor"], 10000);
+    let (_, o) = api.call(&mech, "GET", &wo_url, None).await;
+    assert!(o["items"][0].get("cost_minor").is_none());
+    let (_, p) = api
+        .call(&boss, "GET", &format!("/api/parts/{pid}"), None)
+        .await;
+    assert_eq!(
+        p["fifo_layers"],
+        json!([
+            {"quantity_milli": 8000, "unit_cost_minor": 5000},
+            {"quantity_milli": 4000, "unit_cost_minor": 6000}
+        ])
+    );
+    let (_, p) = api
+        .call(&mech, "GET", &format!("/api/parts/{pid}"), None)
+        .await;
+    assert!(p.get("fifo_layers").is_none());
+
     let (st, _) = api
         .call(
             &mech,

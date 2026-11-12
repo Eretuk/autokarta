@@ -96,7 +96,7 @@
 		picked = part;
 		pQty = '1';
 		pPrice = moneyInput(part.sell_price_minor, currency);
-		loadCost(part.id);
+		loadLayers(part.id);
 		pError = '';
 		// The quantity is the next thing to type (4.5 l of oil): focus it with
 		// the default selected, so typing replaces it.
@@ -140,24 +140,53 @@
 	}
 
 	// ----- price at cost -----
-	// Parts for friends go at what they cost: the last net purchase cost
-	// plus its VAT, since the order is invoiced with VAT anyway.
-	let atCost = $state<number | null>(null);
+	// Parts for friends go at what they cost: the net cost of the pieces
+	// taken (oldest first, as the reports count them) plus the sale VAT,
+	// since the order is invoiced with VAT anyway.
+	type Layer = { quantity_milli: number; unit_cost_minor: number };
+	let costLayers = $state<Layer[] | null>(null);
+	let costFallback: number | null = null;
 	let costFor = '';
 
-	async function loadCost(partId: string | undefined) {
-		atCost = null;
-		costFor = partId ?? '';
-		if (!isOwner || !partId) return;
+	/** Gross unit price for `qty` milli-units whose net cost is `acc` (minor × milli). */
+	function grossUnit(acc: number, qty: number): number {
+		return Math.round((acc * (100 + business.default_vat_percent)) / (qty * 100));
+	}
+
+	async function loadLayers(partId: string) {
+		costLayers = null;
+		costFor = partId;
+		if (!isOwner) return;
 		try {
 			const p = await api<PartDetail>('GET', `/parts/${partId}`);
-			if (costFor !== partId || p.last_cost_minor == null) return;
-			const vat = p.last_cost_vat_percent ?? business.default_vat_percent;
-			atCost = Math.round((p.last_cost_minor * (100 + vat)) / 100);
+			if (costFor !== partId) return;
+			costFallback = p.fifo_layers?.at(-1)?.unit_cost_minor ?? p.last_cost_minor ?? null;
+			costLayers = p.fifo_layers ?? [];
 		} catch {
 			// Only a shortcut: the price can still be typed.
 		}
 	}
+
+	/** At cost for a new line: the next pieces on the shelf. */
+	const pAtCost = $derived.by(() => {
+		if (!costLayers) return null;
+		const qty = parseQuantity(pQty);
+		if (qty === null || qty <= 0) return null;
+		let left = qty;
+		let acc = 0;
+		for (const l of costLayers) {
+			const take = Math.min(left, l.quantity_milli);
+			acc += take * l.unit_cost_minor;
+			left -= take;
+			if (left === 0) break;
+		}
+		if (left > 0) {
+			// More than is on the shelf: the rest at the newest cost.
+			if (costFallback === null) return null;
+			acc += left * costFallback;
+		}
+		return grossUnit(acc, qty);
+	});
 
 	// ----- edit item -----
 	let itemOpen = $state(false);
@@ -168,13 +197,19 @@
 	let itemError = $state('');
 	let itemBusy = $state(false);
 
+	/** At cost for an existing line: what its pieces cost. */
+	const itemAtCost = $derived(
+		item?.cost_minor != null && item.quantity_milli > 0
+			? grossUnit(item.cost_minor * 1000, item.quantity_milli)
+			: null
+	);
+
 	function openItem(i: WorkOrderItem) {
 		if (!isOpen) return;
 		item = i;
 		itemDesc = i.description;
 		itemQty = quantityInput(i.quantity_milli);
 		itemPrice = moneyInput(i.unit_price_minor, currency);
-		loadCost(i.kind === 'part' ? i.part_id : undefined);
 		itemError = '';
 		itemOpen = true;
 	}
@@ -459,9 +494,9 @@
 					</label>
 				{/if}
 			</div>
-			{#if isOwner && atCost !== null}
-				<button class="btn block gap" type="button" onclick={() => (pPrice = moneyInput(atCost, currency))}
-					>{t('workOrders.atCost', { price: formatMoney(atCost, currency) })}</button
+			{#if isOwner && pAtCost !== null}
+				<button class="btn block gap" type="button" onclick={() => (pPrice = moneyInput(pAtCost, currency))}
+					>{t('workOrders.atCost', { price: formatMoney(pAtCost, currency) })}</button
 				>
 			{/if}
 			<button class="btn primary block" type="submit" disabled={pBusy}>{t('parts.addToOrder')}</button>
@@ -493,9 +528,9 @@
 				</label>
 			{/if}
 		</div>
-		{#if isOwner && atCost !== null}
-			<button class="btn block gap" type="button" onclick={() => (itemPrice = moneyInput(atCost, currency))}
-				>{t('workOrders.atCost', { price: formatMoney(atCost, currency) })}</button
+		{#if isOwner && itemAtCost !== null}
+			<button class="btn block gap" type="button" onclick={() => (itemPrice = moneyInput(itemAtCost, currency))}
+				>{t('workOrders.atCost', { price: formatMoney(itemAtCost, currency) })}</button
 			>
 		{/if}
 		<button class="btn primary block" type="submit" disabled={itemBusy}>{t('common.saveChanges')}</button>
