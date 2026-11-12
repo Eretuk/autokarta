@@ -3,6 +3,7 @@
 mod auth;
 mod client_ip;
 mod error;
+mod fifo;
 mod request_log;
 mod routes;
 mod state;

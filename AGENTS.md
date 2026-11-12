@@ -217,9 +217,12 @@ recorded must not be blocked). Used parts are common: `condition` (`new` /
 condition), so a used one is its own item with its own stock, price and
 label, and is marked on screen, on printed orders and on labels. Stock is
 not split into purchase batches: costs are kept per receipt (and per
-stock count, for the first stocktaking). Reports value stock at the last
-known net cost before the date (else the first cost recorded later), not
-FIFO; ask before changing that, the accountant may care. Purchase costs are
+stock count, for the first stocktaking). Reports value used parts and
+stock **FIFO** at net cost (`backend/src/fifo.rs`, chosen by the owner):
+the layers are rebuilt from the ledger on each request, so used + left
+always equals what was paid. Pieces counted without a cost, or fitted
+while stock was at zero (covered by the next receipt, else) take the
+nearest known cost. Purchase costs are
 net, as on the invoice; shelf prices are what the customer pays (gross).
 Suggested price = cost + business `markup_percent` + line VAT, rounded up
 to a whole currency unit. Months in reports follow the browser time zone

@@ -1,10 +1,11 @@
 //! Stock reports for the owner and the accountant: what was bought, what
 //! went into work orders, and what is left on the shelves and is worth.
 //!
-//! Stock is valued at the last known net purchase cost of each part (from
-//! a receipt or a stock count with a cost) before the moment asked for; a
-//! part whose first cost was recorded only later is valued at that first
-//! cost, so a part fitted before its invoice was typed in still counts.
+//! Stock and the parts used are valued first in, first out at their net
+//! purchase cost (see `crate::fifo`): used pieces are the oldest ones, so
+//! what was used plus what is left adds up to what was paid. The layers are
+//! rebuilt from the whole ledger on every request; a small workshop has a
+//! few thousand movements at most. Move it to SQL if it ever gets slow.
 //! Months follow the time zone the browser sends, since the database runs
 //! in UTC and an invoice at 23:30 on the 31st belongs to that month.
 
@@ -14,6 +15,8 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
 use sqlx::{PgPool, Postgres};
 use time::{Date, Month, OffsetDateTime};
 use uuid::Uuid;
@@ -21,6 +24,7 @@ use uuid::Uuid;
 use crate::{
     auth::Owner,
     error::{AppError, AppResult},
+    fifo,
     routes::settings,
     state::AppState,
 };
@@ -29,20 +33,6 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/months", get(months))
         .route("/stock", get(stock))
-}
-
-/// Unit cost of `m.part_id` as of `$T`: the latest cost recorded before
-/// it, else the first one recorded after.
-const COST_AT: &str = "COALESCE(
-    (SELECT c.unit_cost_minor FROM stock_movements c
-      WHERE c.part_id = m.part_id AND c.unit_cost_minor IS NOT NULL AND c.created_at <= {t}
-      ORDER BY c.created_at DESC LIMIT 1),
-    (SELECT c.unit_cost_minor FROM stock_movements c
-      WHERE c.part_id = m.part_id AND c.unit_cost_minor IS NOT NULL
-      ORDER BY c.created_at LIMIT 1))";
-
-fn cost_at(t: &str) -> String {
-    COST_AT.replace("{t}", t)
 }
 
 async fn valid_tz(db: &PgPool, tz: Option<&str>) -> AppResult<String> {
@@ -83,28 +73,104 @@ struct StockValue {
     negative_parts: i64,
 }
 
-async fn stock_value<'e, E>(db: E, at: OffsetDateTime) -> AppResult<StockValue>
-where
-    E: sqlx::Executor<'e, Database = Postgres>,
-{
-    let (value, unvalued, negative): (i64, i64, i64) = sqlx::query_as(&format!(
-        "SELECT COALESCE(sum(round(s.qty::numeric * s.cost / 1000)) FILTER (WHERE s.qty > 0), 0)::bigint,
-                count(*) FILTER (WHERE s.qty > 0 AND s.cost IS NULL),
-                count(*) FILTER (WHERE s.qty < 0)
-           FROM (SELECT m.part_id, sum(m.quantity_milli) AS qty, {cost} AS cost
-                   FROM stock_movements m
-                  WHERE m.created_at < $1
-                  GROUP BY m.part_id) s",
-        cost = cost_at("$1")
-    ))
-    .bind(at)
-    .fetch_one(db)
-    .await?;
-    Ok(StockValue {
-        value_minor: value,
-        unvalued_parts: unvalued,
-        negative_parts: negative,
-    })
+impl StockValue {
+    fn add(&mut self, s: &fifo::Snapshot) {
+        if s.quantity_milli > 0 {
+            match s.value_minor {
+                Some(v) => self.value_minor += v,
+                None => self.unvalued_parts += 1,
+            }
+        } else if s.quantity_milli < 0 {
+            self.negative_parts += 1;
+        }
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct MoveRow {
+    id: Uuid,
+    part_id: Uuid,
+    kind: String,
+    quantity_milli: i64,
+    unit_cost_minor: Option<i64>,
+    created_at: OffsetDateTime,
+}
+
+/// The whole stock ledger valued FIFO, part by part, with snapshots at
+/// `moments` (ascending).
+struct Ledger {
+    parts: Vec<PartLedger>,
+}
+
+struct PartLedger {
+    part_id: Uuid,
+    valuation: fifo::Valuation,
+    /// Its consumption movements: id and when.
+    used: Vec<(Uuid, OffsetDateTime)>,
+}
+
+impl Ledger {
+    async fn load<'e, E>(db: E, moments: &[OffsetDateTime]) -> AppResult<Ledger>
+    where
+        E: sqlx::Executor<'e, Database = Postgres>,
+    {
+        let rows = sqlx::query_as::<_, MoveRow>(
+            "SELECT id, part_id, kind, quantity_milli, unit_cost_minor, created_at
+               FROM stock_movements
+              ORDER BY part_id, created_at, id",
+        )
+        .fetch_all(db)
+        .await?;
+        let mut parts = Vec::new();
+        for chunk in rows.chunk_by(|a, b| a.part_id == b.part_id) {
+            let moves: Vec<fifo::Move> = chunk
+                .iter()
+                .map(|r| fifo::Move {
+                    id: r.id,
+                    at: r.created_at,
+                    quantity_milli: r.quantity_milli,
+                    unit_cost_minor: r.unit_cost_minor,
+                })
+                .collect();
+            let used = chunk
+                .iter()
+                .filter(|r| r.kind == "consumption")
+                .map(|r| (r.id, r.created_at))
+                .collect();
+            parts.push(PartLedger {
+                part_id: chunk[0].part_id,
+                valuation: fifo::value(&moves, moments),
+                used,
+            });
+        }
+        Ok(Ledger { parts })
+    }
+
+    fn stock(&self, moment: usize) -> StockValue {
+        let mut total = StockValue::default();
+        for p in &self.parts {
+            total.add(&p.valuation.snapshots[moment]);
+        }
+        total
+    }
+
+    /// Cost of the parts used in `[from, to)`, and how many lines had no cost.
+    fn used(&self, from: OffsetDateTime, to: OffsetDateTime) -> (i64, i64) {
+        let (mut cost, mut unvalued) = (0, 0);
+        for p in &self.parts {
+            for (id, at) in &p.used {
+                if *at < from || *at >= to {
+                    continue;
+                }
+                // Consumption stores negative quantities: its cost is positive.
+                match p.valuation.out_cost.get(id).copied().flatten() {
+                    Some(c) => cost += c,
+                    None => unvalued += 1,
+                }
+            }
+        }
+        (cost, unvalued)
+    }
 }
 
 // ---------- months ----------
@@ -161,7 +227,8 @@ async fn months(
     let today = local_today(&state.db, &tz).await?;
     let now = OffsetDateTime::now_utc();
 
-    let mut months = Vec::new();
+    // (first day, first day of the next month, both as instants)
+    let mut windows = Vec::new();
     let mut month = Month::January;
     loop {
         let start = first_of(query.year, month)?;
@@ -175,7 +242,24 @@ async fn months(
         };
         let t_start = local_midnight(&state.db, start, &tz).await?;
         let t_end = local_midnight(&state.db, next, &tz).await?;
+        windows.push((start, next, t_start, t_end));
+        if month == Month::December {
+            break;
+        }
+        month = month.next();
+    }
 
+    // One snapshot of the ledger for every month, so the months agree.
+    let mut tx = state.db.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        .execute(&mut *tx)
+        .await?;
+    // Stock at the end of each month; now, for the current one.
+    let moments: Vec<OffsetDateTime> = windows.iter().map(|w| w.3.min(now)).collect();
+    let ledger = Ledger::load(&mut *tx, &moments).await?;
+
+    let mut months = Vec::new();
+    for (k, &(start, next, t_start, t_end)) in windows.iter().enumerate() {
         let (purchased, purchased_lines, purchased_unpriced): (i64, i64, i64) = sqlx::query_as(
             "SELECT COALESCE(sum(round(m.quantity_milli::numeric * m.unit_cost_minor / 1000)), 0)::bigint,
                     count(*) FILTER (WHERE m.unit_cost_minor IS NOT NULL),
@@ -192,28 +276,23 @@ async fn months(
         .bind(next)
         .bind(t_start)
         .bind(t_end)
-        .fetch_one(&state.db)
+        .fetch_one(&mut *tx)
         .await?;
 
-        let (used_cost, used_sale, used_lines, used_unpriced, used_unvalued): (i64, i64, i64, i64, i64) =
-            sqlx::query_as(&format!(
-                "SELECT COALESCE(sum(round(-u.qty::numeric * u.cost / 1000)), 0)::bigint,
-                        COALESCE(sum(round(i.quantity_milli::numeric * i.unit_price_minor / 1000)), 0)::bigint,
-                        count(*),
-                        count(*) FILTER (WHERE i.unit_price_minor IS NULL),
-                        count(*) FILTER (WHERE u.cost IS NULL)
-                   FROM (SELECT m.work_order_item_id, m.quantity_milli AS qty, {cost} AS cost
-                           FROM stock_movements m
-                          WHERE m.kind = 'consumption' AND m.created_at >= $1 AND m.created_at < $2) u
-                   JOIN work_order_items i ON i.id = u.work_order_item_id",
-                cost = cost_at("m.created_at")
-            ))
-            .bind(t_start)
-            .bind(t_end)
-            .fetch_one(&state.db)
-            .await?;
+        let (used_sale, used_lines, used_unpriced): (i64, i64, i64) = sqlx::query_as(
+            "SELECT COALESCE(sum(round(i.quantity_milli::numeric * i.unit_price_minor / 1000)), 0)::bigint,
+                    count(*),
+                    count(*) FILTER (WHERE i.unit_price_minor IS NULL)
+               FROM stock_movements m
+               JOIN work_order_items i ON i.id = m.work_order_item_id
+              WHERE m.kind = 'consumption' AND m.created_at >= $1 AND m.created_at < $2",
+        )
+        .bind(t_start)
+        .bind(t_end)
+        .fetch_one(&mut *tx)
+        .await?;
+        let (used_cost, used_unvalued) = ledger.used(t_start, t_end);
 
-        let stock_end = stock_value(&state.db, t_end.min(now)).await?;
         months.push(MonthRow {
             month: start,
             purchased_net_minor: purchased,
@@ -224,13 +303,10 @@ async fn months(
             used_lines,
             used_unpriced,
             used_unvalued,
-            stock_end,
+            stock_end: ledger.stock(k),
         });
-        if month == Month::December {
-            break;
-        }
-        month = month.next();
     }
+    tx.commit().await?;
 
     Ok(Json(MonthsReport {
         year: query.year,
@@ -248,7 +324,18 @@ struct StockQuery {
     tz: Option<String>,
 }
 
-#[derive(Serialize, sqlx::FromRow)]
+#[derive(sqlx::FromRow)]
+struct PartInfo {
+    id: Uuid,
+    name: String,
+    brand: Option<String>,
+    part_number: Option<String>,
+    condition: String,
+    unit: String,
+    location: Option<String>,
+}
+
+#[derive(Serialize)]
 struct StockRow {
     id: Uuid,
     name: String,
@@ -293,23 +380,47 @@ async fn stock(
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         .execute(&mut *tx)
         .await?;
-    let rows = sqlx::query_as::<_, StockRow>(&format!(
-        "SELECT p.id, p.name, p.brand, p.part_number, p.condition, p.unit, p.location,
-                s.qty AS quantity_milli, s.cost AS unit_cost_minor,
-                round(s.qty::numeric * s.cost / 1000)::bigint AS value_minor
-           FROM (SELECT m.part_id, sum(m.quantity_milli)::bigint AS qty, {cost} AS cost
-                   FROM stock_movements m
-                  WHERE m.created_at < $1
-                  GROUP BY m.part_id) s
-           JOIN parts p ON p.id = s.part_id
-          WHERE s.qty > 0
-          ORDER BY lower(p.name), p.brand, p.condition",
-        cost = cost_at("$1")
-    ))
-    .bind(at)
+    let ledger = Ledger::load(&mut *tx, &[at]).await?;
+    let parts = sqlx::query_as::<_, PartInfo>(
+        "SELECT id, name, brand, part_number, condition, unit, location FROM parts",
+    )
     .fetch_all(&mut *tx)
     .await?;
-    let total = stock_value(&mut *tx, at).await?;
+    let mut info: HashMap<Uuid, PartInfo> = parts.into_iter().map(|p| (p.id, p)).collect();
+    let mut total = StockValue::default();
+    let mut rows = Vec::new();
+    for pl in &ledger.parts {
+        let snap = pl.valuation.snapshots[0];
+        total.add(&snap);
+        if snap.quantity_milli <= 0 {
+            continue;
+        }
+        let Some(p) = info.remove(&pl.part_id) else {
+            continue;
+        };
+        rows.push(StockRow {
+            id: p.id,
+            name: p.name,
+            brand: p.brand,
+            part_number: p.part_number,
+            condition: p.condition,
+            unit: p.unit,
+            location: p.location,
+            quantity_milli: snap.quantity_milli,
+            // What is left may come from several purchases: the average.
+            unit_cost_minor: snap
+                .value_minor
+                .map(|v| (v as i128 * 1000 / snap.quantity_milli as i128) as i64),
+            value_minor: snap.value_minor,
+        });
+    }
+    rows.sort_by(|a, b| {
+        (a.name.to_lowercase(), &a.brand, &a.condition).cmp(&(
+            b.name.to_lowercase(),
+            &b.brand,
+            &b.condition,
+        ))
+    });
     tx.commit().await?;
 
     Ok(Json(StockReport {

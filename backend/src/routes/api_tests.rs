@@ -1359,12 +1359,12 @@ async fn monthly_report_counts_purchases_use_and_stock(db: PgPool) {
     let m = months.last().unwrap();
     // The stocktaking is not a purchase; the delivery is.
     assert_eq!(m["purchased_net_minor"], 24000);
-    // Used at the latest cost before the work order (60.00) and sold at 90.00.
-    assert_eq!(m["used_cost_minor"], 12000);
+    // FIFO: the 2 pads come from the stocktaking (50.00), sold at 90.00.
+    assert_eq!(m["used_cost_minor"], 10000);
     assert_eq!(m["used_sale_minor"], 18000);
     assert_eq!(m["used_lines"], 1);
-    // 12 pads left at 60.00.
-    assert_eq!(m["stock_end"]["value_minor"], 72000);
+    // 8 left at 50.00 and 4 at 60.00: with what was used, all that was paid.
+    assert_eq!(m["stock_end"]["value_minor"], 64000);
     assert_eq!(m["stock_end"]["unvalued_parts"], 0);
 
     let (st, r) = api
@@ -1372,8 +1372,10 @@ async fn monthly_report_counts_purchases_use_and_stock(db: PgPool) {
         .await;
     assert_eq!(st, StatusCode::OK, "{r}");
     assert_eq!(r["rows"][0]["quantity_milli"], 12000);
-    assert_eq!(r["rows"][0]["value_minor"], 72000);
-    assert_eq!(r["total"]["value_minor"], 72000);
+    assert_eq!(r["rows"][0]["value_minor"], 64000);
+    // Mixed purchases: the average of what is left.
+    assert_eq!(r["rows"][0]["unit_cost_minor"], 5333);
+    assert_eq!(r["total"]["value_minor"], 64000);
 
     // Stock on a day before anything happened is empty.
     let (_, r) = api

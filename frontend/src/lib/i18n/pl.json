@@ -677,11 +677,11 @@
 		"noCost": "Bez ceny",
 		"unit": "Jednostka",
 		"quantity": "Ilość",
-		"unitCost": "Cena zakupu netto, {currency}",
+		"unitCost": "Cena zakupu netto (średnia), {currency}",
 		"value": "Wartość, {currency}",
 		"howTitle": "Jak to jest liczone",
 		"howNet": "Zakupy to ceny netto z dostaw, według daty faktury.",
-		"howValue": "Stan jest wyceniany według ostatniej znanej ceny zakupu netto każdej części.",
+		"howValue": "Wycena metodą FIFO w cenach zakupu netto: zużyte części pochodzą z najstarszych zakupów, pozostałe z najnowszych.",
 		"howSale": "Ceny ze zleceń są takie, jak wpisano w zleceniach.",
 		"howCount": "Części znalezione przy inwentaryzacji to nie zakupy: tylko zwiększają wartość stanu."
 	},

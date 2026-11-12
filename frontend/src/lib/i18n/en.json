@@ -647,11 +647,11 @@
 		"noCost": "No price",
 		"unit": "Unit",
 		"quantity": "Quantity",
-		"unitCost": "Net purchase price, {currency}",
+		"unitCost": "Net purchase price (average), {currency}",
 		"value": "Value, {currency}",
 		"howTitle": "How it is counted",
 		"howNet": "Purchases are net prices from the deliveries, by invoice date.",
-		"howValue": "Stock is valued at the last known net purchase price of each part.",
+		"howValue": "Valued first in, first out (FIFO) at net purchase prices: parts used come from the oldest purchases, what is left from the newest.",
 		"howSale": "Work order prices are as entered in the orders.",
 		"howCount": "Parts found during a stock count are not purchases: they only add to the stock value."
 	},
