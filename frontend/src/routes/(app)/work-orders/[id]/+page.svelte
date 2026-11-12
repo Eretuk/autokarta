@@ -105,8 +105,9 @@
 		pQtyInput?.select();
 	}
 
-	async function addPart(e: SubmitEvent) {
-		e.preventDefault();
+	/** `atCost`: add at this price instead of the one in the field. */
+	async function addPart(e?: Event, atCost?: number) {
+		e?.preventDefault();
 		if (!picked) return;
 		const quantity = parseQuantity(pQty);
 		if (quantity === null) {
@@ -114,8 +115,8 @@
 			return;
 		}
 		// Without a typed price the server applies the catalogue price.
-		let unitPrice: number | undefined;
-		if (isOwner && pPrice.trim()) {
+		let unitPrice: number | undefined = atCost;
+		if (isOwner && atCost === undefined && pPrice.trim()) {
 			const p = parseMoney(pPrice, currency);
 			if (p === null) {
 				pError = t('errors.invalid_price');
@@ -214,8 +215,9 @@
 		itemOpen = true;
 	}
 
-	async function saveItem(e: SubmitEvent) {
-		e.preventDefault();
+	/** `atCost`: save at this price instead of the one in the field. */
+	async function saveItem(e?: Event, atCost?: number) {
+		e?.preventDefault();
 		if (!item) return;
 		const quantity = parseQuantity(itemQty);
 		if (quantity === null) {
@@ -223,7 +225,9 @@
 			return;
 		}
 		const body: Record<string, unknown> = { description: itemDesc, quantity_milli: quantity };
-		if (isOwner) {
+		if (isOwner && atCost !== undefined) {
+			body.unit_price_minor = atCost;
+		} else if (isOwner) {
 			if (itemPrice.trim()) {
 				const p = parseMoney(itemPrice, currency);
 				if (p === null) {
@@ -494,12 +498,12 @@
 					</label>
 				{/if}
 			</div>
+			<button class="btn primary block" type="submit" disabled={pBusy}>{t('parts.addToOrder')}</button>
 			{#if isOwner && pAtCost !== null}
-				<button class="btn block gap" type="button" onclick={() => (pPrice = moneyInput(pAtCost, currency))}
-					>{t('workOrders.atCost', { price: formatMoney(pAtCost, currency) })}</button
+				<button class="btn block gap" type="button" disabled={pBusy} onclick={() => addPart(undefined, pAtCost ?? undefined)}
+					>{t('workOrders.addAtCost', { price: formatMoney(pAtCost, currency) })}</button
 				>
 			{/if}
-			<button class="btn primary block" type="submit" disabled={pBusy}>{t('parts.addToOrder')}</button>
 			<button class="btn block gap" type="button" disabled={pBusy} onclick={() => (picked = null)}
 				>{t('parts.pickAnother')}</button
 			>
@@ -528,12 +532,17 @@
 				</label>
 			{/if}
 		</div>
-		{#if isOwner && itemAtCost !== null}
-			<button class="btn block gap" type="button" onclick={() => (itemPrice = moneyInput(itemAtCost, currency))}
-				>{t('workOrders.atCost', { price: formatMoney(itemAtCost, currency) })}</button
+		<button class="btn primary block" type="submit" disabled={itemBusy}>{t('common.saveChanges')}</button>
+		<!-- The cost is known for the saved quantity: after changing it, save first. -->
+		{#if isOwner && itemAtCost !== null && parseQuantity(itemQty) === item?.quantity_milli}
+			<button
+				class="btn block gap"
+				type="button"
+				disabled={itemBusy}
+				onclick={() => saveItem(undefined, itemAtCost ?? undefined)}
+				>{t('workOrders.saveAtCost', { price: formatMoney(itemAtCost, currency) })}</button
 			>
 		{/if}
-		<button class="btn primary block" type="submit" disabled={itemBusy}>{t('common.saveChanges')}</button>
 		<button class="btn danger block gap" type="button" disabled={itemBusy} onclick={deleteItem}
 			>{t('workOrders.deleteItem')}</button
 		>

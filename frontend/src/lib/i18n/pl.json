@@ -362,7 +362,8 @@
 		"deleteItem": "Usuń pozycję",
 		"confirmDeleteItem": "Usunąć tę pozycję ze zlecenia?",
 		"confirmCancel": "Anulować zlecenie? Zostanie w historii jako anulowane.",
-		"atCost": "Po kosztach zakupu: {price}"
+		"addAtCost": "Dodaj po kosztach zakupu: {price}",
+		"saveAtCost": "Zapisz po kosztach zakupu: {price}"
 	},
 	"parts": {
 		"title": "Części",

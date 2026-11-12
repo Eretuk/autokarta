@@ -352,7 +352,8 @@
 		"deleteItem": "Delete this line",
 		"confirmDeleteItem": "Delete this line from the order?",
 		"confirmCancel": "Cancel this work order? It stays in the history as cancelled.",
-		"atCost": "At cost: {price}"
+		"addAtCost": "Add at cost: {price}",
+		"saveAtCost": "Save at cost: {price}"
 	},
 	"parts": {
 		"title": "Parts",
