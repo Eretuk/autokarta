@@ -102,6 +102,30 @@ impl Api {
     }
 }
 
+impl Api {
+    /// A request with a raw body; returns status, headers and the body bytes.
+    async fn raw(
+        &self,
+        s: &Session,
+        method: &str,
+        uri: &str,
+        body: Vec<u8>,
+    ) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+        let req = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(header::COOKIE, &s.0)
+            .header(header::CONTENT_TYPE, "application/octet-stream")
+            .body(Body::from(body))
+            .unwrap();
+        let res = self.app.clone().oneshot(req).await.unwrap();
+        let status = res.status();
+        let headers = res.headers().clone();
+        let bytes = to_bytes(res.into_body(), 64 << 20).await.unwrap();
+        (status, headers, bytes.to_vec())
+    }
+}
+
 fn s(v: &Value) -> &str {
     v.as_str().unwrap()
 }
@@ -900,4 +924,446 @@ async fn used_parts_are_separate_items(db: PgPool) {
         )
         .await;
     assert_eq!(s(&wo["items"][0]["condition"]), "used");
+}
+
+#[sqlx::test]
+async fn deliveries_put_parts_on_stock_when_posted(db: PgPool) {
+    let api = Api::new(db).await;
+    let boss = api.login("boss").await;
+    let mech = api.login("mech").await;
+
+    // Deliveries are owner-only: they are all purchase prices.
+    let (st, _) = api.call(&mech, "GET", "/api/deliveries", None).await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, _) = api.call(&mech, "GET", "/api/suppliers", None).await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+
+    let (st, sup) = api
+        .call(
+            &boss,
+            "POST",
+            "/api/suppliers",
+            Some(json!({"name": "Demo Parts Sp. z o.o.", "tax_id": "PL 123-456-78-90"})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "{sup}");
+    assert_eq!(s(&sup["tax_id"]), "1234567890");
+    let (st, v) = api
+        .call(
+            &boss,
+            "POST",
+            "/api/suppliers",
+            Some(json!({"name": "Same NIP", "tax_id": "1234567890"})),
+        )
+        .await;
+    assert_eq!((st, s(&v["error"])), (StatusCode::CONFLICT, "tax_id_taken"));
+    let (_, found) = api
+        .call(&boss, "GET", "/api/suppliers?q=123-456", None)
+        .await;
+    assert_eq!(found.as_array().unwrap().len(), 1);
+
+    let (_, filter) = api
+        .call(
+            &boss,
+            "POST",
+            "/api/parts",
+            Some(
+                json!({"name": "Oil filter", "brand": "Demo", "part_number": "OF-1",
+                        "sell_price_minor": 3000, "stock_milli": 2000, "unit_cost_minor": 1500}),
+            ),
+        )
+        .await;
+    let fid = s(&filter["id"]).to_string();
+    assert_eq!(filter["last_cost_minor"], 1500);
+
+    // Markup 30 %: suggested prices appear on the lines.
+    let (_, set) = api
+        .call(
+            &boss,
+            "PATCH",
+            "/api/settings",
+            Some(json!({"markup_percent": 30})),
+        )
+        .await;
+    assert_eq!(set["markup_percent"], 30);
+    let (_, set) = api.call(&mech, "GET", "/api/settings", None).await;
+    assert!(set.get("markup_percent").is_none());
+
+    let (st, d) = api
+        .call(
+            &boss,
+            "POST",
+            "/api/deliveries",
+            Some(
+                json!({"supplier_id": s(&sup["id"]), "invoice_number": "FV 1/11/2026",
+                        "invoice_date": "2026-11-03", "invoice_total_net_minor": 6000}),
+            ),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "{d}");
+    assert_eq!(s(&d["status"]), "draft");
+    let url = format!("/api/deliveries/{}", s(&d["id"]));
+
+    // The same invoice of the same supplier cannot be entered twice.
+    let (st, v) = api
+        .call(
+            &boss,
+            "POST",
+            "/api/deliveries",
+            Some(json!({"supplier_id": s(&sup["id"]), "invoice_number": "fv 1/11/2026"})),
+        )
+        .await;
+    assert_eq!(
+        (st, s(&v["error"])),
+        (StatusCode::CONFLICT, "invoice_already_entered")
+    );
+
+    // Two filters at 20.00 net, and a line not matched to a part yet.
+    let (st, d) = api
+        .call(
+            &boss,
+            "POST",
+            &format!("{url}/items"),
+            Some(json!({"part_id": fid, "quantity_milli": 2000, "unit_cost_minor": 2000})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "{d}");
+    let line = &d["items"][0];
+    assert_eq!(line["previous_cost_minor"], 1500);
+    assert_eq!(line["total_net_minor"], 4000);
+    // 20.00 + 30 % + 23 % VAT = 31.98, rounded up to 32.00.
+    assert_eq!(line["suggested_price_minor"], 3200);
+    let (_, d) = api
+        .call(
+            &boss,
+            "POST",
+            &format!("{url}/items"),
+            Some(
+                json!({"description": "Wiper blade 600 mm", "part_number": "WB600",
+                        "quantity_milli": 1000, "unit_cost_minor": 2000, "vat_percent": 23}),
+            ),
+        )
+        .await;
+    assert_eq!(d["totals"]["net_minor"], 6000);
+    assert_eq!(d["totals"]["gross_minor"], 7380);
+    let wiper_line = s(&d["items"][1]["id"]).to_string();
+
+    let (st, v) = api
+        .call(&boss, "POST", &format!("{url}/post"), Some(json!({})))
+        .await;
+    assert_eq!(
+        (st, s(&v["error"])),
+        (StatusCode::CONFLICT, "delivery_unmatched_lines")
+    );
+
+    let (_, wiper) = api
+        .call(
+            &boss,
+            "POST",
+            "/api/parts",
+            Some(json!({"name": "Wiper blade 600 mm", "part_number": "WB600"})),
+        )
+        .await;
+    let wid = s(&wiper["id"]).to_string();
+    api.call(
+        &boss,
+        "PATCH",
+        &format!("{url}/items/{wiper_line}"),
+        Some(json!({"part_id": wid})),
+    )
+    .await;
+
+    // Nothing is on stock before posting.
+    let (_, p) = api
+        .call(&boss, "GET", &format!("/api/parts/{fid}"), None)
+        .await;
+    assert_eq!(p["stock_milli"], 2000);
+
+    let (st, d) = api
+        .call(
+            &boss,
+            "POST",
+            &format!("{url}/post"),
+            Some(json!({"prices": [{"part_id": fid, "sell_price_minor": 3200}]})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{d}");
+    assert_eq!(s(&d["status"]), "posted");
+    let (_, p) = api
+        .call(&boss, "GET", &format!("/api/parts/{fid}"), None)
+        .await;
+    assert_eq!(p["stock_milli"], 4000);
+    assert_eq!(p["sell_price_minor"], 3200);
+    assert_eq!(p["last_cost_minor"], 2000);
+    assert_eq!(p["last_cost_vat_percent"], 23);
+    assert_eq!(p["movements"][0]["delivery_number"], d["number"]);
+    let (_, p) = api
+        .call(&mech, "GET", &format!("/api/parts/{fid}"), None)
+        .await;
+    assert!(p.get("last_cost_minor").is_none());
+    assert!(p["movements"][0].get("unit_cost_minor").is_none());
+
+    // A posted delivery is locked; the header can still be corrected.
+    let (st, v) = api
+        .call(&boss, "DELETE", &format!("{url}/items/{wiper_line}"), None)
+        .await;
+    assert_eq!(
+        (st, s(&v["error"])),
+        (StatusCode::CONFLICT, "delivery_posted")
+    );
+    let (st, _) = api.call(&boss, "DELETE", &url, None).await;
+    assert_eq!(st, StatusCode::CONFLICT);
+    let (st, d) = api
+        .call(&boss, "PATCH", &url, Some(json!({"note": "Paid by card"})))
+        .await;
+    assert_eq!((st, s(&d["note"])), (StatusCode::OK, "Paid by card"));
+    // A part bought in a delivery cannot be deleted.
+    let (st, v) = api
+        .call(&boss, "DELETE", &format!("/api/parts/{wid}"), None)
+        .await;
+    assert_eq!((st, s(&v["error"])), (StatusCode::CONFLICT, "part_in_use"));
+
+    // Reopening takes the parts off stock again.
+    let (st, _) = api
+        .call(&boss, "POST", &format!("{url}/reopen"), None)
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    let (_, p) = api
+        .call(&boss, "GET", &format!("/api/parts/{fid}"), None)
+        .await;
+    assert_eq!(p["stock_milli"], 2000);
+    let (_, list) = api
+        .call(&boss, "GET", "/api/deliveries?status=draft", None)
+        .await;
+    assert_eq!(list[0]["item_count"], 2);
+    assert_eq!(list[0]["total_net_minor"], 6000);
+    let (st, _) = api.call(&boss, "DELETE", &url, None).await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+}
+
+#[sqlx::test]
+async fn delivery_files_are_checked_and_never_run(db: PgPool) {
+    let api = Api::new(db).await;
+    let boss = api.login("boss").await;
+    let mech = api.login("mech").await;
+    let (_, d) = api
+        .call(&boss, "POST", "/api/deliveries", Some(json!({})))
+        .await;
+    let url = format!("/api/deliveries/{}/files", s(&d["id"]));
+
+    let pdf = b"%PDF-1.7\n% demo invoice\n".to_vec();
+    let (st, _, body) = api
+        .raw(
+            &boss,
+            "POST",
+            &format!("{url}?name=FV%201%2F2026.pdf"),
+            pdf.clone(),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let d: Value = serde_json::from_slice(&body).unwrap();
+    let file = &d["files"][0];
+    assert_eq!(s(&file["file_name"]), "2026.pdf");
+    assert_eq!(s(&file["content_type"]), "application/pdf");
+    let file_url = format!("{url}/{}", s(&file["id"]));
+
+    let (st, h, body) = api.raw(&boss, "GET", &file_url, vec![]).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(body, pdf);
+    assert_eq!(h[header::CONTENT_TYPE], "application/pdf");
+    assert!(h[header::CONTENT_DISPOSITION]
+        .to_str()
+        .unwrap()
+        .starts_with("inline"));
+    // The browser's PDF viewer refuses to work in a sandbox.
+    assert!(h.get(header::CONTENT_SECURITY_POLICY).is_none());
+
+    // XML (KSeF) is only ever a download.
+    let xml = b"<?xml version=\"1.0\"?><Faktura></Faktura>".to_vec();
+    let (st, _, body) = api
+        .raw(&boss, "POST", &format!("{url}?name=ksef.xml"), xml)
+        .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let d: Value = serde_json::from_slice(&body).unwrap();
+    let xml_url = format!("{url}/{}", s(&d["files"][1]["id"]));
+    let (_, h, _) = api.raw(&boss, "GET", &xml_url, vec![]).await;
+    assert!(h[header::CONTENT_DISPOSITION]
+        .to_str()
+        .unwrap()
+        .starts_with("attachment"));
+    assert_eq!(
+        h[header::CONTENT_SECURITY_POLICY],
+        "sandbox; default-src 'none'"
+    );
+
+    // Anything else is refused, whatever its name says.
+    let (st, _, body) = api
+        .raw(
+            &boss,
+            "POST",
+            &format!("{url}?name=x.pdf"),
+            b"MZ\x90\x00".to_vec(),
+        )
+        .await;
+    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["error"],
+        "unsupported_file_type"
+    );
+    let (st, _, _) = api.raw(&mech, "GET", &file_url, vec![]).await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, _, _) = api
+        .raw(
+            &boss,
+            "POST",
+            &url,
+            vec![b'%'; super::deliveries::MAX_FILE_BYTES + 1],
+        )
+        .await;
+    assert_eq!(st, StatusCode::PAYLOAD_TOO_LARGE);
+
+    let (st, d) = api.call(&boss, "DELETE", &file_url, None).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(d["files"].as_array().unwrap().len(), 1);
+}
+
+#[sqlx::test]
+async fn monthly_report_counts_purchases_use_and_stock(db: PgPool) {
+    let api = Api::new(db.clone()).await;
+    let boss = api.login("boss").await;
+    let mech = api.login("mech").await;
+
+    // First stocktaking: 10 pads found on the shelf, valued at 50.00 each.
+    let (_, pads) = api
+        .call(
+            &boss,
+            "POST",
+            "/api/parts",
+            Some(json!({"name": "Brake pads", "sell_price_minor": 9000})),
+        )
+        .await;
+    let pid = s(&pads["id"]).to_string();
+    let (st, _) = api
+        .call(
+            &boss,
+            "POST",
+            &format!("/api/parts/{pid}/movements"),
+            Some(json!({"kind": "count", "quantity_milli": 10000, "unit_cost_minor": 5000})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CREATED);
+    // Mechanics cannot set costs.
+    let (st, _) = api
+        .call(
+            &mech,
+            "POST",
+            &format!("/api/parts/{pid}/movements"),
+            Some(json!({"kind": "count", "quantity_milli": 10000, "unit_cost_minor": 1})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+
+    // A delivery of 4 more at 60.00, dated today.
+    let today = time::OffsetDateTime::now_utc().date();
+    let (_, d) = api
+        .call(
+            &boss,
+            "POST",
+            "/api/deliveries",
+            Some(json!({"invoice_date": today.to_string()})),
+        )
+        .await;
+    let url = format!("/api/deliveries/{}", s(&d["id"]));
+    api.call(
+        &boss,
+        "POST",
+        &format!("{url}/items"),
+        Some(json!({"part_id": pid, "quantity_milli": 4000, "unit_cost_minor": 6000})),
+    )
+    .await;
+    api.call(&boss, "POST", &format!("{url}/post"), Some(json!({})))
+        .await;
+
+    // 2 pads go into a work order at 90.00.
+    let (_, v) = api
+        .call(
+            &mech,
+            "POST",
+            "/api/vehicles",
+            Some(json!({"plate": "TEST 2"})),
+        )
+        .await;
+    let (_, wo) = api
+        .call(
+            &mech,
+            "POST",
+            "/api/work-orders",
+            Some(json!({"vehicle_id": s(&v["id"])})),
+        )
+        .await;
+    api.call(
+        &mech,
+        "POST",
+        &format!("/api/work-orders/{}/items", s(&wo["id"])),
+        Some(json!({"part_id": pid, "quantity_milli": 2000})),
+    )
+    .await;
+
+    let (st, _) = api
+        .call(
+            &mech,
+            "GET",
+            &format!("/api/reports/months?year={}", today.year()),
+            None,
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, v) = api
+        .call(
+            &boss,
+            "GET",
+            "/api/reports/months?year=2026&tz=Mars/Base",
+            None,
+        )
+        .await;
+    assert_eq!(
+        (st, s(&v["error"])),
+        (StatusCode::UNPROCESSABLE_ENTITY, "invalid_time_zone")
+    );
+
+    let (st, r) = api
+        .call(
+            &boss,
+            "GET",
+            &format!("/api/reports/months?year={}&tz=UTC", today.year()),
+            None,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{r}");
+    let months = r["months"].as_array().unwrap();
+    assert_eq!(months.len(), today.month() as usize);
+    let m = months.last().unwrap();
+    // The stocktaking is not a purchase; the delivery is.
+    assert_eq!(m["purchased_net_minor"], 24000);
+    // Used at the latest cost before the work order (60.00) and sold at 90.00.
+    assert_eq!(m["used_cost_minor"], 12000);
+    assert_eq!(m["used_sale_minor"], 18000);
+    assert_eq!(m["used_lines"], 1);
+    // 12 pads left at 60.00.
+    assert_eq!(m["stock_end"]["value_minor"], 72000);
+    assert_eq!(m["stock_end"]["unvalued_parts"], 0);
+
+    let (st, r) = api
+        .call(&boss, "GET", "/api/reports/stock?tz=Europe/Warsaw", None)
+        .await;
+    assert_eq!(st, StatusCode::OK, "{r}");
+    assert_eq!(r["rows"][0]["quantity_milli"], 12000);
+    assert_eq!(r["rows"][0]["value_minor"], 72000);
+    assert_eq!(r["total"]["value_minor"], 72000);
+
+    // Stock on a day before anything happened is empty.
+    let (_, r) = api
+        .call(&boss, "GET", "/api/reports/stock?date=2020-01-01", None)
+        .await;
+    assert_eq!(r["rows"].as_array().unwrap().len(), 0);
 }

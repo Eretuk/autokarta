@@ -10,6 +10,7 @@
 	import ScanButton from '$lib/components/ScanButton.svelte';
 	import { formatStock } from '$lib/format';
 	import { t } from '$lib/i18n/index.svelte';
+	import { session } from '$lib/session.svelte';
 	import type { PartSummary } from '$lib/types';
 
 	const FILTERS = ['all', 'low'] as const;
@@ -122,6 +123,14 @@
 	<Icon name="plus" />{unknownBarcode ? t('parts.addWithBarcode') : t('parts.add')}
 </a>
 
+<nav class="actions tools" aria-label={t('parts.tools')}>
+	<a class="btn" href="/parts/count">{t('stockCount.title')}</a>
+	{#if session.user?.role === 'owner'}
+		<a class="btn" href="/parts/deliveries">{t('deliveries.title')}</a>
+		<a class="btn" href="/parts/report">{t('report.title')}</a>
+	{/if}
+</nav>
+
 <div class="segmented filters" role="group" aria-label={t('parts.filter')}>
 	{#each FILTERS as f (f)}
 		<button type="button" class="btn" aria-pressed={filter === f} onclick={() => setFilter(f)}
@@ -175,7 +184,10 @@
 		min-height: 56px;
 	}
 	.add {
-		margin-bottom: 16px;
+		margin-bottom: 8px;
+	}
+	.tools {
+		margin: 0 0 16px;
 	}
 	.filters {
 		margin-bottom: 12px;

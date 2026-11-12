@@ -47,6 +47,14 @@ The **vehicle** is the center of the model.
 - `stock_movements`: ledger of receipts, consumption into work orders and
   inventory adjustments. **Stock level is the sum of movements, never a
   stored counter.** Add a materialized view only if it ever gets slow.
+- `suppliers` + `deliveries` + `delivery_items` + `delivery_files`: a
+  purchase invoice (faktura) with net costs and VAT per line and the
+  attached files (PDF, KSeF XML, photo), stored in PostgreSQL so the
+  database backup covers them. Draft until posted; posting turns each line
+  into a receipt. The beta tester's main pain is that nobody knows what is
+  on the shelves and the accountant sees purchases far above sales, so the
+  monthly report (purchased / used at cost and at sale price / stock value)
+  and the stock count mode matter more than anything decorative here.
 - Own QR labels for shelves/bins and for parts without barcodes.
 - `rentals` + `rental_payments`: contract (taxi or regular), driver, period, rate, payments.
 - `sale_listings`: price, description, photos, status.
@@ -129,7 +137,8 @@ only an example for the latter.
 - `autokarta` / `autokarta serve`: HTTP server.
 - Migrations: `users` + `sessions`; vehicles, clients, ownership history,
   odometer readings, work orders + items, business settings; parts, barcodes,
-  stock movements, part lines in work orders (`backend/migrations/`).
+  stock movements, part lines in work orders; suppliers, deliveries with
+  lines and files, markup setting (`backend/migrations/`).
 - Session auth: 256-bit random token in an HttpOnly, SameSite=Lax cookie
   `autokarta_session`; DB stores only its SHA-256 hash. `COOKIE_SECURE=false`
   only for local HTTP development.
@@ -175,7 +184,19 @@ API (all JSON, prefix `/api`):
 | GET/PUT | `/parts/{id}` | staff | detail with barcodes and the last 100 movements |
 | DELETE | `/parts/{id}` | owner | only if no work order uses it |
 | POST/DELETE | `/parts/{id}/barcodes` | staff | `{barcode}`; a barcode belongs to one part |
-| POST | `/parts/{id}/movements` | staff | `{kind: receipt\|count, quantity_milli, unit_cost_minor?, note?}`; a count records the difference |
+| POST | `/parts/{id}/movements` | staff | `{kind: receipt\|count, quantity_milli, unit_cost_minor?, note?}`; a count records the difference (its cost is kept only when stock goes up) |
+| GET/POST | `/suppliers?q=` | owner | `{name, tax_id?, note?}`; NIP stored as digits/letters, `PL` prefix dropped |
+| PUT | `/suppliers/{id}` | owner | same body |
+| GET/POST | `/deliveries?status=&q=` | owner | `{supplier_id?, invoice_number?, invoice_date?, invoice_total_net_minor?, note?}`; same supplier + invoice number twice is `invoice_already_entered` |
+| GET/PATCH/DELETE | `/deliveries/{id}` | owner | detail with lines, files, totals, `suggested_price_minor` per line; delete only drafts |
+| POST | `/deliveries/{id}/items` | owner | `{part_id?, description?, part_number?, quantity_milli, unit_cost_minor, vat_percent?}`; drafts only |
+| PATCH/DELETE | `/deliveries/{id}/items/{item_id}` | owner | drafts only |
+| POST | `/deliveries/{id}/post` | owner | `{prices: [{part_id, sell_price_minor}]}`; every line needs a part |
+| POST | `/deliveries/{id}/reopen` | owner | back to draft, receipts removed |
+| POST | `/deliveries/{id}/files?name=` | owner | raw body, max 15 MB; PDF, XML, PNG, JPEG, WebP by content |
+| GET/DELETE | `/deliveries/{id}/files/{file_id}` | owner | download with `CSP: sandbox`; XML only as attachment |
+| GET | `/reports/months?year=&tz=` | owner | per month: purchased net, used at cost and sale price, stock value at month end |
+| GET | `/reports/stock?date=&tz=` | owner | parts on stock at the end of a day, with value |
 
 Prices and totals are owner-only: mechanics never receive them and cannot set
 them (this includes part sale prices and purchase costs). Stock is the sum of
@@ -184,7 +205,14 @@ recorded must not be blocked). Used parts are common: `condition` (`new` /
 `used`) is part of a part's identity (unique on brand + part number +
 condition), so a used one is its own item with its own stock, price and
 label, and is marked on screen, on printed orders and on labels. Stock is
-not split into purchase batches: costs are kept per receipt. A part line in a work order owns one
+not split into purchase batches: costs are kept per receipt (and per
+stock count, for the first stocktaking). Reports value stock at the last
+known net cost before the date (else the first cost recorded later), not
+FIFO; ask before changing that, the accountant may care. Purchase costs are
+net, as on the invoice; shelf prices are what the customer pays (gross).
+Suggested price = cost + business `markup_percent` + line VAT, rounded up
+to a whole currency unit. Months in reports follow the browser time zone
+(`tz`), because PostgreSQL runs in UTC. A part line in a work order owns one
 consumption movement; cancelling the order removes them, reopening restores
 them. A reading lower than the latest one returns 409
 `odometer_lower_than_previous` unless `confirm_lower` is sent. API tests in
@@ -209,7 +237,14 @@ them to owners) and QR labels on A4 sticker sheets, 3 x 8 of 70 x 37 mm
 (`/print/labels?part={id}`). A label carries the part's own code `AK-XXXXXXXX`
 (Crockford base32), stored as one of its barcodes, so scanning it uses the
 normal barcode search. QR codes are drawn with `uqr` (MIT). Shelf labels are
-not done yet. The backend sets `Cache-Control`: `immutable` for
+not done yet. Deliveries (owners, under the parts tab): list, delivery page
+(supplier with NIP, invoice header, lines matched by search or scan or left
+unmatched and turned into a new part, files, post with suggested shelf
+prices, reopen), stock count mode `/parts/count` for everyone (scan, type
+what is on the shelf, owners add the net cost), report `/parts/report`
+(months and stock on a date, CSV built in the browser: BOM, `;`, locale
+decimals, translated headers). Markup % is on the account page.
+`parts/new` returns to `back` with `created=<id>`. The backend sets `Cache-Control`: `immutable` for
 `/_app/immutable/*`, `no-cache` for other static files.
 
 Deployment: `Dockerfile` (node build + cargo-chef + debian-slim, non-root),
@@ -265,6 +300,17 @@ checks out PR code) stores signatures on the `cla-signatures` branch.
    PostgreSQL (HTTPS via an external reverse proxy), CI workflow.
 2. Vehicles, odometer readings, work orders.
 3. Parts stock with scanning, consumption into work orders, low-stock list.
+   Then (asked by the beta tester): supplier deliveries by invoice with the
+   PDF attached, markup and suggested shelf prices, stock count mode for the
+   first stocktaking, monthly purchased/used/stock report with CSV export.
+   Next: import of KSeF invoice XML (all his purchase invoices are already in
+   KSeF: deterministic, free, no AI), first as an uploaded file, later
+   fetched with a KSeF token. Later and optional: reading PDF or paper
+   invoices with an AI model (off by default, API key in `.env`, always a
+   draft that a human checks and posts; invoices leave the server, so the
+   owner turns it on knowingly). n8n can only run next to the app (Sustainable
+   Use License, never bundled) and would need API tokens first. Printed price
+   tags are not wanted for now: the price is looked up on the phone.
 4. Public share link page.
 5. Maintenance reminders: background task in the same binary + Telegram bot.
    Before or together with it: fleet documents (`vehicle_documents`, see

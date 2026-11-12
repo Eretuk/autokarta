@@ -10,7 +10,11 @@
 	import { appVersion } from '$lib/version.svelte';
 
 	const UNITS: DistanceUnit[] = ['km', 'mi'];
-	let biz = $state({ currency: business.currency, distance_unit: business.distance_unit });
+	let biz = $state({
+		currency: business.currency,
+		distance_unit: business.distance_unit,
+		markup: business.markup_percent === null || business.markup_percent === undefined ? '' : String(business.markup_percent)
+	});
 	let bizBusy = $state(false);
 	let bizMsg = $state<{ ok: boolean; text: string } | null>(null);
 
@@ -25,13 +29,19 @@
 		) {
 			return;
 		}
+		const markupText = biz.markup.trim().replace('%', '').trim();
+		if (markupText && (!/^\d{1,4}$/.test(markupText) || Number(markupText) > 1000)) {
+			bizMsg = { ok: false, text: t('errors.invalid_markup') };
+			return;
+		}
 		bizBusy = true;
 		bizMsg = null;
 		try {
 			setBusinessSettings(
 				await api<BusinessSettings>('PATCH', '/settings', {
 					currency,
-					distance_unit: biz.distance_unit
+					distance_unit: biz.distance_unit,
+					markup_percent: markupText ? Number(markupText) : null
 				})
 			);
 			bizMsg = { ok: true, text: t('settings.saved') };
@@ -199,6 +209,11 @@
 					>
 				{/each}
 			</div>
+			<label class="field">
+				{t('settings.markup')}
+				<span class="hint">{t('settings.markupHint')}</span>
+				<input type="text" inputmode="numeric" bind:value={biz.markup} maxlength="5" autocomplete="off" />
+			</label>
 			<button class="btn primary" type="submit" disabled={bizBusy}>{t('common.saveChanges')}</button>
 		</form>
 	</section>

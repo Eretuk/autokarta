@@ -4,7 +4,7 @@
 	import PartFields, { partBody, partForm, type PartForm } from '$lib/components/PartFields.svelte';
 	import ScanButton from '$lib/components/ScanButton.svelte';
 	import Sheet from '$lib/components/Sheet.svelte';
-	import { formatMoney, formatStock, parseDecimal, parseMoney, parseQuantity, quantityInput } from '$lib/format';
+	import { formatMoney, formatStock, moneyInput, parseDecimal, parseMoney, parseQuantity, quantityInput } from '$lib/format';
 	import { formatDate, t } from '$lib/i18n/index.svelte';
 	import { newOwnCode, ownCode } from '$lib/labels';
 	import { session } from '$lib/session.svelte';
@@ -19,6 +19,17 @@
 	const currency = $derived(business.currency);
 	const unit = $derived(t(`units.${p.unit}`));
 	const low = $derived(p.min_stock_milli > 0 && p.stock_milli < p.min_stock_milli);
+	const lastCost = $derived(p.last_cost_minor ?? null);
+	const price = $derived(p.sell_price_minor ?? null);
+	const lastVat = $derived(p.last_cost_vat_percent ?? null);
+	/** Markup net to net: the shelf price includes VAT, the cost does not.
+	 * Without the VAT of the last delivery it would be a wrong number, so
+	 * none is shown. */
+	const markup = $derived(
+		lastCost !== null && price !== null && lastVat !== null && lastCost > 0
+			? Math.round((price / (1 + lastVat / 100) / lastCost - 1) * 100)
+			: null
+	);
 
 	// ----- delivery -----
 	let receiveOpen = $state(false);
@@ -72,11 +83,13 @@
 	// ----- stock count -----
 	let countOpen = $state(false);
 	let cQty = $state('');
+	let cCost = $state('');
 	let cError = $state('');
 	let cBusy = $state(false);
 
 	function openCount() {
 		cQty = p.stock_milli >= 0 ? quantityInput(p.stock_milli) : '';
+		cCost = moneyInput(p.last_cost_minor, currency);
 		cError = '';
 		countOpen = true;
 	}
@@ -88,10 +101,23 @@
 			cError = t('errors.invalid_quantity');
 			return;
 		}
+		let cost: number | undefined;
+		if (isOwner && cCost.trim()) {
+			const c = parseMoney(cCost, currency);
+			if (c === null) {
+				cError = t('errors.invalid_price');
+				return;
+			}
+			cost = c;
+		}
 		cBusy = true;
 		cError = '';
 		try {
-			p = await api<PartDetail>('POST', `/parts/${p.id}/movements`, { kind: 'count', quantity_milli: qty });
+			p = await api<PartDetail>('POST', `/parts/${p.id}/movements`, {
+				kind: 'count',
+				quantity_milli: qty,
+				unit_cost_minor: cost
+			});
 			countOpen = false;
 		} catch (err) {
 			cError = errorMessage(err);
@@ -219,6 +245,14 @@
 			<dt>{t('parts.sellPrice', { currency })}</dt>
 			<dd>{formatMoney(p.sell_price_minor, currency)}</dd>
 		{/if}
+		{#if isOwner && lastCost !== null}
+			<dt>{t('parts.lastCost')}</dt>
+			<dd>{formatMoney(lastCost, currency)}</dd>
+			{#if markup !== null}
+				<dt>{t('parts.markup')}</dt>
+				<dd class:danger={markup < 0}>{t('parts.markupValue', { value: markup })}</dd>
+			{/if}
+		{/if}
 	</dl>
 	{#if p.note}<p class="note">{p.note}</p>{/if}
 	<button class="btn primary block" type="button" onclick={openReceive}>{t('parts.receive')}</button>
@@ -295,6 +329,9 @@
 						{#if m.work_order_id && m.work_order_number !== null}
 							· <a href="/work-orders/{m.work_order_id}">{t('workOrders.number', { number: m.work_order_number })}</a>
 						{/if}
+						{#if isOwner && m.delivery_id && m.delivery_number !== null}
+							· <a href="/parts/deliveries/{m.delivery_id}">{t('deliveries.number', { number: m.delivery_number })}</a>
+						{/if}
 					</span>
 					<span class="hint">
 						{formatDate(m.created_at)}{#if m.created_by_name}{' · ' + m.created_by_name}{/if}{#if m.unit_cost_minor !== undefined}{' · ' +
@@ -341,6 +378,13 @@
 			{t('parts.countQty', { unit })}
 			<input type="text" inputmode="decimal" bind:value={cQty} maxlength="12" autocomplete="off" required />
 		</label>
+		{#if isOwner}
+			<label class="field">
+				{t('parts.netCost', { currency })}
+				<span class="hint">{t('parts.countCostHint')}</span>
+				<input type="text" inputmode="decimal" bind:value={cCost} maxlength="16" autocomplete="off" />
+			</label>
+		{/if}
 		<button class="btn primary block" type="submit" disabled={cBusy}>{t('parts.countSubmit')}</button>
 	</form>
 </Sheet>

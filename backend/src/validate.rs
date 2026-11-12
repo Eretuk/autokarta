@@ -273,6 +273,52 @@ pub fn stock_quantity_milli(v: i64) -> Result<i64, &'static str> {
     }
 }
 
+pub fn markup_percent(v: i64) -> Result<i16, &'static str> {
+    if (0..=1000).contains(&v) {
+        Ok(v as i16)
+    } else {
+        Err("invalid_markup")
+    }
+}
+
+pub fn vat_percent(v: i64) -> Result<i16, &'static str> {
+    if (0..=100).contains(&v) {
+        Ok(v as i16)
+    } else {
+        Err("invalid_vat")
+    }
+}
+
+/// Tax number (NIP, VAT ID): letters and digits only, uppercase, so the
+/// same supplier typed with or without dashes or the "PL" prefix is found.
+pub fn tax_id(raw: Option<&str>) -> Result<Option<String>, &'static str> {
+    let Some(raw) = raw.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    if !raw
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '.'))
+    {
+        return Err("invalid_tax_id");
+    }
+    let v: String = raw
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|c| c.to_ascii_uppercase())
+        .collect();
+    // A bare Polish NIP is stored without the country prefix.
+    let v = match v.strip_prefix("PL") {
+        Some(rest) if rest.len() == 10 && rest.chars().all(|c| c.is_ascii_digit()) => {
+            rest.to_string()
+        }
+        _ => v,
+    };
+    (4..=20)
+        .contains(&v.len())
+        .then_some(Some(v))
+        .ok_or("invalid_tax_id")
+}
+
 /// Line total in minor units: quantity (thousandths) x unit price,
 /// rounded half up to a whole minor unit.
 pub fn line_total(quantity_milli: i64, unit_price_minor: i64) -> i64 {
@@ -283,6 +329,25 @@ pub fn line_total(quantity_milli: i64, unit_price_minor: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tax_ids() {
+        assert_eq!(
+            tax_id(Some(" PL 123-456-78-90 ")).unwrap().as_deref(),
+            Some("1234567890")
+        );
+        assert_eq!(
+            tax_id(Some("123-45-67-890")).unwrap().as_deref(),
+            Some("1234567890")
+        );
+        assert_eq!(
+            tax_id(Some("DE123456789")).unwrap().as_deref(),
+            Some("DE123456789")
+        );
+        assert_eq!(tax_id(Some("  ")).unwrap(), None);
+        assert!(tax_id(Some("12/34")).is_err());
+        assert!(tax_id(Some("12")).is_err());
+    }
 
     #[test]
     fn vins() {

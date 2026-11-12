@@ -4,7 +4,7 @@
 	import { api, errorMessage, safeNext } from '$lib/api';
 	import PartFields, { emptyPartForm, partBody, partForm, type PartForm } from '$lib/components/PartFields.svelte';
 	import ScanButton from '$lib/components/ScanButton.svelte';
-	import { parseDecimal } from '$lib/format';
+	import { parseDecimal, parseMoney } from '$lib/format';
 	import { t } from '$lib/i18n/index.svelte';
 	import { session } from '$lib/session.svelte';
 	import { business } from '$lib/settings.svelte';
@@ -39,16 +39,24 @@
 		return {
 			...emptyPartForm(),
 			condition,
-			name: /\d/.test(typed) ? '' : typed,
-			part_number: /\d/.test(typed) ? typed : ''
+			// A delivery line passes what the invoice says explicitly.
+			name: params.get('name') ?? (/\d/.test(typed) ? '' : typed),
+			part_number: params.get('part_number') ?? (/\d/.test(typed) ? typed : '')
 		};
 	}
 	let barcode = $state(params.get('barcode') ?? '');
 	let stockNow = $state('');
+	let stockCost = $state('');
 	let error = $state('');
 	let busy = $state(false);
 
 	const isOwner = $derived(session.user?.role === 'owner');
+
+	function withCreated(path: string, id: string): string {
+		const url = new URL(path, location.origin);
+		url.searchParams.set('created', id);
+		return url.pathname + url.search;
+	}
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
@@ -63,14 +71,26 @@
 			error = t('errors.invalid_quantity');
 			return;
 		}
+		let cost: number | undefined;
+		if (isOwner && stockCost.trim()) {
+			const c = parseMoney(stockCost, business.currency);
+			if (c === null) {
+				error = t('errors.invalid_price');
+				return;
+			}
+			cost = c;
+		}
 		busy = true;
 		try {
 			const p = await api<PartDetail>('POST', '/parts', {
 				...parsed.body,
 				barcodes: barcode.trim() ? [barcode.trim()] : [],
-				stock_milli: stock
+				stock_milli: stock,
+				unit_cost_minor: cost
 			});
-			await goto(back || `/parts/${p.id}`, { replaceState: true });
+			// The page we came from learns which part was made (a delivery
+			// line attaches it, stock count opens it).
+			await goto(back ? withCreated(back, p.id) : `/parts/${p.id}`, { replaceState: true });
 		} catch (err) {
 			error = errorMessage(err);
 		} finally {
@@ -101,10 +121,18 @@
 		<ScanButton onScan={(d) => (barcode = d.text.trim())} />
 	</div>
 
-	<label class="field">
-		{t('parts.stockNow', { unit: t(`units.${form.unit}`) })}
-		<input type="text" inputmode="decimal" bind:value={stockNow} maxlength="12" autocomplete="off" />
-	</label>
+	<div class:two-cols={isOwner}>
+		<label class="field">
+			{t('parts.stockNow', { unit: t(`units.${form.unit}`) })}
+			<input type="text" inputmode="decimal" bind:value={stockNow} maxlength="12" autocomplete="off" />
+		</label>
+		{#if isOwner}
+			<label class="field">
+				{t('parts.netCost', { currency: business.currency })}
+				<input type="text" inputmode="decimal" bind:value={stockCost} maxlength="16" autocomplete="off" />
+			</label>
+		{/if}
+	</div>
 
 	{#if error}<div class="notice error" role="alert">{error}</div>{/if}
 

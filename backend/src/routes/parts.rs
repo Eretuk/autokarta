@@ -184,6 +184,8 @@ struct CreatePart {
     barcodes: Vec<String>,
     /// How many are on the shelf right now; recorded as a stock count.
     stock_milli: Option<i64>,
+    /// Net purchase cost of that stock, for its value. Owners only.
+    unit_cost_minor: Option<i64>,
 }
 
 async fn create(
@@ -192,6 +194,10 @@ async fn create(
     Json(req): Json<CreatePart>,
 ) -> AppResult<(StatusCode, Json<PartDetail>)> {
     let p = clean(&req.part, &user)?;
+    if req.unit_cost_minor.is_some() && !user.is_owner() {
+        return Err(AppError::Forbidden);
+    }
+    let cost = validate::price_minor(req.unit_cost_minor).map_err(AppError::Validation)?;
     let mut barcodes = req
         .barcodes
         .iter()
@@ -233,7 +239,7 @@ async fn create(
             .map_err(|e| conflict_on(e, UNIQUE))?;
     }
     if let Some(stock) = stock.filter(|s| *s > 0) {
-        insert_movement(&mut tx, id, "adjustment", stock, None, None, user.id).await?;
+        insert_movement(&mut tx, id, "adjustment", stock, cost, None, user.id).await?;
     }
     tx.commit().await?;
 
@@ -288,11 +294,13 @@ async fn remove(
 ) -> AppResult<StatusCode> {
     let mut tx = state.db.begin().await?;
     lock_part(&mut tx, id).await?;
-    let used: bool =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM work_order_items WHERE part_id = $1)")
-            .bind(id)
-            .fetch_one(&mut *tx)
-            .await?;
+    let used: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM work_order_items WHERE part_id = $1)
+             OR EXISTS (SELECT 1 FROM delivery_items WHERE part_id = $1)",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
     if used {
         return Err(AppError::Conflict("part_in_use"));
     }
@@ -370,7 +378,8 @@ struct MovementInput {
     /// (the difference is recorded as an adjustment).
     kind: String,
     quantity_milli: i64,
-    /// Purchase price per unit; receipts only, owners only.
+    /// Net purchase price per unit, owners only. On a count it values the
+    /// parts found (first stocktaking) and is kept only when stock goes up.
     unit_cost_minor: Option<i64>,
     note: Option<String>,
 }
@@ -390,30 +399,20 @@ async fn add_movement(
     // Serializes with other movements of this part, so a count sees a
     // stock level nobody is changing at the same moment.
     lock_part(&mut tx, id).await?;
+    let cost = validate::price_minor(req.unit_cost_minor).map_err(AppError::Validation)?;
     match req.kind.as_str() {
         "receipt" => {
             let qty = validate::quantity_milli(req.quantity_milli).map_err(AppError::Validation)?;
-            let cost = validate::price_minor(req.unit_cost_minor).map_err(AppError::Validation)?;
             insert_movement(&mut tx, id, "receipt", qty, cost, note, user.id).await?;
         }
         "count" => {
-            if req.unit_cost_minor.is_some() {
-                return Err(AppError::Validation("invalid_price"));
-            }
             let counted =
                 validate::stock_quantity_milli(req.quantity_milli).map_err(AppError::Validation)?;
             let current = stock_of(&mut tx, id).await?;
-            if counted != current {
-                insert_movement(
-                    &mut tx,
-                    id,
-                    "adjustment",
-                    counted - current,
-                    None,
-                    note,
-                    user.id,
-                )
-                .await?;
+            let diff = counted - current;
+            if diff != 0 {
+                let cost = cost.filter(|_| diff > 0);
+                insert_movement(&mut tx, id, "adjustment", diff, cost, note, user.id).await?;
             }
         }
         _ => return Err(AppError::Validation("invalid_movement_kind")),
@@ -503,6 +502,13 @@ struct PartRow {
     sell_price_minor: Option<i64>,
     note: Option<String>,
     stock_milli: i64,
+    /// Latest net purchase cost. Owners only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_cost_minor: Option<i64>,
+    /// VAT of that cost when it came with a delivery, so the markup can be
+    /// computed net to net. Owners only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_cost_vat_percent: Option<i16>,
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -518,6 +524,8 @@ struct Movement {
     created_by_name: Option<String>,
     work_order_id: Option<Uuid>,
     work_order_number: Option<i64>,
+    delivery_id: Option<Uuid>,
+    delivery_number: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -540,8 +548,16 @@ async fn detail(
 async fn load_detail(state: &AppState, id: Uuid, user: &CurrentUser) -> AppResult<PartDetail> {
     let mut part = sqlx::query_as::<_, PartRow>(&format!(
         "SELECT p.id, p.name, p.brand, p.part_number, p.condition, p.unit, p.location, p.min_stock_milli,
-                p.sell_price_minor, p.note, {STOCK} AS stock_milli
-           FROM parts p WHERE p.id = $1"
+                p.sell_price_minor, p.note, {STOCK} AS stock_milli,
+                c.unit_cost_minor AS last_cost_minor, c.vat_percent AS last_cost_vat_percent
+           FROM parts p
+           LEFT JOIN LATERAL (
+               SELECT m.unit_cost_minor, di.vat_percent
+                 FROM stock_movements m
+                 LEFT JOIN delivery_items di ON di.id = m.delivery_item_id
+                WHERE m.part_id = p.id AND m.unit_cost_minor IS NOT NULL
+                ORDER BY m.created_at DESC LIMIT 1) c ON true
+          WHERE p.id = $1"
     ))
     .bind(id)
     .fetch_optional(&state.db)
@@ -558,11 +574,14 @@ async fn load_detail(state: &AppState, id: Uuid, user: &CurrentUser) -> AppResul
     let mut movements = sqlx::query_as::<_, Movement>(
         "SELECT m.id, m.kind, m.quantity_milli, m.unit_cost_minor, m.note, m.created_at,
                 u.display_name AS created_by_name,
-                w.id AS work_order_id, w.number AS work_order_number
+                w.id AS work_order_id, w.number AS work_order_number,
+                d.id AS delivery_id, d.number AS delivery_number
            FROM stock_movements m
            LEFT JOIN users u ON u.id = m.created_by
            LEFT JOIN work_order_items i ON i.id = m.work_order_item_id
            LEFT JOIN work_orders w ON w.id = i.work_order_id
+           LEFT JOIN delivery_items di ON di.id = m.delivery_item_id
+           LEFT JOIN deliveries d ON d.id = di.delivery_id
           WHERE m.part_id = $1
           ORDER BY m.created_at DESC, m.id
           LIMIT 100",
@@ -573,6 +592,8 @@ async fn load_detail(state: &AppState, id: Uuid, user: &CurrentUser) -> AppResul
 
     if !user.is_owner() {
         part.sell_price_minor = None;
+        part.last_cost_minor = None;
+        part.last_cost_vat_percent = None;
         movements.iter_mut().for_each(|m| m.unit_cost_minor = None);
     }
     Ok(PartDetail {
