@@ -4,12 +4,12 @@
 	import PartFields, { partBody, partForm, type PartForm } from '$lib/components/PartFields.svelte';
 	import ScanButton from '$lib/components/ScanButton.svelte';
 	import Sheet from '$lib/components/Sheet.svelte';
-	import { formatMoney, formatStock, parseDecimal, parseMoney, parseQuantity, quantityInput } from '$lib/format';
+	import { formatMoney, formatStock, moneyInput, parseDecimal, parseMoney, quantityInput } from '$lib/format';
 	import { formatDate, t } from '$lib/i18n/index.svelte';
 	import { newOwnCode, ownCode } from '$lib/labels';
 	import { session } from '$lib/session.svelte';
 	import { business } from '$lib/settings.svelte';
-	import type { PartDetail } from '$lib/types';
+	import type { DeliveryDetail, DeliveryListRow, PartDetail } from '$lib/types';
 
 	let { data } = $props();
 	// Follows navigation to another part; local updates overwrite it.
@@ -19,49 +19,51 @@
 	const currency = $derived(business.currency);
 	const unit = $derived(t(`units.${p.unit}`));
 	const low = $derived(p.min_stock_milli > 0 && p.stock_milli < p.min_stock_milli);
+	const lastCost = $derived(p.last_cost_minor ?? null);
+	const price = $derived(p.sell_price_minor ?? null);
+	const lastVat = $derived(p.last_cost_vat_percent ?? null);
+	/** Markup net to net: the shelf price includes VAT, the cost does not.
+	 * Without the VAT of the last delivery it would be a wrong number, so
+	 * none is shown. */
+	const markup = $derived(
+		lastCost !== null && price !== null && lastVat !== null && lastCost > 0
+			? Math.round((price / (1 + lastVat / 100) / lastCost - 1) * 100)
+			: null
+	);
 
-	// ----- delivery -----
+	// ----- buying: always through a delivery document -----
 	let receiveOpen = $state(false);
-	let rQty = $state('');
-	let rCost = $state('');
-	let rNote = $state('');
+	let drafts = $state<DeliveryListRow[] | null>(null);
 	let rError = $state('');
 	let rBusy = $state(false);
 
-	function openReceive() {
-		rQty = '';
-		rCost = '';
-		rNote = '';
+	async function openReceive() {
 		rError = '';
+		drafts = null;
 		receiveOpen = true;
+		try {
+			drafts = await api<DeliveryListRow[]>('GET', '/deliveries?status=draft');
+		} catch (err) {
+			rError = errorMessage(err);
+			drafts = [];
+		}
 	}
 
-	async function receive(e: SubmitEvent) {
-		e.preventDefault();
-		const qty = parseQuantity(rQty);
-		if (qty === null) {
-			rError = t('errors.invalid_quantity');
-			return;
-		}
-		let cost: number | undefined;
-		if (isOwner && rCost.trim()) {
-			const c = parseMoney(rCost, currency);
-			if (c === null) {
-				rError = t('errors.invalid_price');
-				return;
-			}
-			cost = c;
-		}
+	/** Adds this part to a draft delivery (a new one if `id` is null) and
+	 * opens that line there, so quantity and cost are typed next to the
+	 * invoice they belong to. */
+	async function receiveInto(id: string | null) {
 		rBusy = true;
 		rError = '';
 		try {
-			p = await api<PartDetail>('POST', `/parts/${p.id}/movements`, {
-				kind: 'receipt',
-				quantity_milli: qty,
-				unit_cost_minor: cost,
-				note: rNote
+			const deliveryId = id ?? (await api<DeliveryDetail>('POST', '/deliveries', {})).id;
+			const d = await api<DeliveryDetail>('POST', `/deliveries/${deliveryId}/items`, {
+				part_id: p.id,
+				quantity_milli: 1000,
+				unit_cost_minor: p.last_cost_minor ?? 0
 			});
-			receiveOpen = false;
+			const line = d.items[d.items.length - 1];
+			await goto(`/parts/deliveries/${deliveryId}?edit=${line.id}`);
 		} catch (err) {
 			rError = errorMessage(err);
 		} finally {
@@ -72,11 +74,13 @@
 	// ----- stock count -----
 	let countOpen = $state(false);
 	let cQty = $state('');
+	let cCost = $state('');
 	let cError = $state('');
 	let cBusy = $state(false);
 
 	function openCount() {
 		cQty = p.stock_milli >= 0 ? quantityInput(p.stock_milli) : '';
+		cCost = moneyInput(p.last_cost_minor, currency);
 		cError = '';
 		countOpen = true;
 	}
@@ -88,10 +92,23 @@
 			cError = t('errors.invalid_quantity');
 			return;
 		}
+		let cost: number | undefined;
+		if (isOwner && cCost.trim()) {
+			const c = parseMoney(cCost, currency);
+			if (c === null) {
+				cError = t('errors.invalid_price');
+				return;
+			}
+			cost = c;
+		}
 		cBusy = true;
 		cError = '';
 		try {
-			p = await api<PartDetail>('POST', `/parts/${p.id}/movements`, { kind: 'count', quantity_milli: qty });
+			p = await api<PartDetail>('POST', `/parts/${p.id}/movements`, {
+				kind: 'count',
+				quantity_milli: qty,
+				unit_cost_minor: cost
+			});
 			countOpen = false;
 		} catch (err) {
 			cError = errorMessage(err);
@@ -219,9 +236,19 @@
 			<dt>{t('parts.sellPrice', { currency })}</dt>
 			<dd>{formatMoney(p.sell_price_minor, currency)}</dd>
 		{/if}
+		{#if isOwner && lastCost !== null}
+			<dt>{t('parts.lastCost')}</dt>
+			<dd>{formatMoney(lastCost, currency)}</dd>
+			{#if markup !== null}
+				<dt>{t('parts.markup')}</dt>
+				<dd class:danger={markup < 0}>{t('parts.markupValue', { value: markup })}</dd>
+			{/if}
+		{/if}
 	</dl>
 	{#if p.note}<p class="note">{p.note}</p>{/if}
-	<button class="btn primary block" type="button" onclick={openReceive}>{t('parts.receive')}</button>
+	{#if isOwner}
+		<button class="btn primary block" type="button" onclick={openReceive}>{t('parts.receive')}</button>
+	{/if}
 	<div class="actions">
 		<button class="btn" type="button" onclick={openCount}>{t('parts.count')}</button>
 		<button class="btn" type="button" onclick={openEdit}>{t('parts.edit')}</button>
@@ -295,6 +322,9 @@
 						{#if m.work_order_id && m.work_order_number !== null}
 							· <a href="/work-orders/{m.work_order_id}">{t('workOrders.number', { number: m.work_order_number })}</a>
 						{/if}
+						{#if isOwner && m.delivery_id && m.delivery_number !== null}
+							· <a href="/parts/deliveries/{m.delivery_id}">{t('deliveries.number', { number: m.delivery_number })}</a>
+						{/if}
 					</span>
 					<span class="hint">
 						{formatDate(m.created_at)}{#if m.created_by_name}{' · ' + m.created_by_name}{/if}{#if m.unit_cost_minor !== undefined}{' · ' +
@@ -313,24 +343,34 @@
 {/if}
 
 <Sheet bind:open={receiveOpen} title={t('parts.receive')}>
-	<form onsubmit={receive}>
-		{#if rError}<div class="notice error" role="alert">{rError}</div>{/if}
-		<label class="field">
-			{t('parts.receiveQty', { unit })}
-			<input type="text" inputmode="decimal" bind:value={rQty} maxlength="12" autocomplete="off" required />
-		</label>
-		{#if isOwner}
-			<label class="field">
-				{t('parts.unitCost', { currency })}
-				<input type="text" inputmode="decimal" bind:value={rCost} maxlength="16" autocomplete="off" />
-			</label>
+	{#if rError}<div class="notice error" role="alert">{rError}</div>{/if}
+	<p class="hint">{t('parts.receiveHint')}</p>
+	{#if drafts === null}
+		<p class="hint">{t('common.loading')}</p>
+	{:else}
+		{#if drafts.length > 0}
+			<p class="label">{t('parts.receiveIntoDraft')}</p>
+			<ul class="rows drafts">
+				{#each drafts as dr (dr.id)}
+					<li>
+						<button class="row-link" type="button" disabled={rBusy} onclick={() => receiveInto(dr.id)}>
+							<span class="row-main">
+								<strong>{dr.supplier_name ?? t('deliveries.noSupplier')}</strong>
+								<span class="hint">
+									{t('deliveries.number', { number: dr.number })}{#if dr.invoice_number}{' · '}<span class="mono"
+											>{dr.invoice_number}</span
+										>{/if}{' · '}{formatDate(dr.invoice_date)}
+								</span>
+							</span>
+						</button>
+					</li>
+				{/each}
+			</ul>
 		{/if}
-		<label class="field">
-			{t('parts.movementNote')}
-			<input type="text" bind:value={rNote} maxlength="500" autocomplete="off" placeholder={t('parts.movementNotePlaceholder')} />
-		</label>
-		<button class="btn primary block" type="submit" disabled={rBusy}>{t('parts.receiveSubmit')}</button>
-	</form>
+		<button class="btn primary block" type="button" disabled={rBusy} onclick={() => receiveInto(null)}
+			>{t('deliveries.new')}</button
+		>
+	{/if}
 </Sheet>
 
 <Sheet bind:open={countOpen} title={t('parts.count')}>
@@ -341,6 +381,13 @@
 			{t('parts.countQty', { unit })}
 			<input type="text" inputmode="decimal" bind:value={cQty} maxlength="12" autocomplete="off" required />
 		</label>
+		{#if isOwner}
+			<label class="field">
+				{t('parts.netCost', { currency })}
+				<span class="hint">{t('parts.countCostHint')}</span>
+				<input type="text" inputmode="decimal" bind:value={cCost} maxlength="16" autocomplete="off" />
+			</label>
+		{/if}
 		<button class="btn primary block" type="submit" disabled={cBusy}>{t('parts.countSubmit')}</button>
 	</form>
 </Sheet>
@@ -363,6 +410,10 @@
 </Sheet>
 
 <style>
+	.label {
+		font-weight: 500;
+		margin: 12px 0 6px;
+	}
 	.head h1 {
 		margin: 0;
 		overflow-wrap: anywhere;

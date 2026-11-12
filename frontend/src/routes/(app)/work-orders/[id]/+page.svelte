@@ -20,7 +20,7 @@
 	import { parseReading, withLowerConfirm } from '$lib/odometer';
 	import { session } from '$lib/session.svelte';
 	import { business } from '$lib/settings.svelte';
-	import type { PartSummary, WorkOrderDetail, WorkOrderItem, WorkOrderStatus } from '$lib/types';
+	import type { PartDetail, PartSummary, WorkOrderDetail, WorkOrderItem, WorkOrderStatus } from '$lib/types';
 
 	let { data } = $props();
 	// Follows navigation to another order; local updates overwrite it.
@@ -96,6 +96,7 @@
 		picked = part;
 		pQty = '1';
 		pPrice = moneyInput(part.sell_price_minor, currency);
+		loadLayers(part.id);
 		pError = '';
 		// The quantity is the next thing to type (4.5 l of oil): focus it with
 		// the default selected, so typing replaces it.
@@ -104,8 +105,9 @@
 		pQtyInput?.select();
 	}
 
-	async function addPart(e: SubmitEvent) {
-		e.preventDefault();
+	/** `atCost`: add at this price instead of the one in the field. */
+	async function addPart(e?: Event, atCost?: number) {
+		e?.preventDefault();
 		if (!picked) return;
 		const quantity = parseQuantity(pQty);
 		if (quantity === null) {
@@ -113,8 +115,8 @@
 			return;
 		}
 		// Without a typed price the server applies the catalogue price.
-		let unitPrice: number | undefined;
-		if (isOwner && pPrice.trim()) {
+		let unitPrice: number | undefined = atCost;
+		if (isOwner && atCost === undefined && pPrice.trim()) {
 			const p = parseMoney(pPrice, currency);
 			if (p === null) {
 				pError = t('errors.invalid_price');
@@ -138,6 +140,55 @@
 		}
 	}
 
+	// ----- price at cost -----
+	// Parts for friends go at what they cost: the net cost of the pieces
+	// taken (oldest first, as the reports count them) plus the sale VAT,
+	// since the order is invoiced with VAT anyway.
+	type Layer = { quantity_milli: number; unit_cost_minor: number };
+	let costLayers = $state<Layer[] | null>(null);
+	let costFallback: number | null = null;
+	let costFor = '';
+
+	/** Gross unit price for `qty` milli-units whose net cost is `acc` (minor × milli). */
+	function grossUnit(acc: number, qty: number): number {
+		return Math.round((acc * (100 + business.default_vat_percent)) / (qty * 100));
+	}
+
+	async function loadLayers(partId: string) {
+		costLayers = null;
+		costFor = partId;
+		if (!isOwner) return;
+		try {
+			const p = await api<PartDetail>('GET', `/parts/${partId}`);
+			if (costFor !== partId) return;
+			costFallback = p.fifo_layers?.at(-1)?.unit_cost_minor ?? p.last_cost_minor ?? null;
+			costLayers = p.fifo_layers ?? [];
+		} catch {
+			// Only a shortcut: the price can still be typed.
+		}
+	}
+
+	/** At cost for a new line: the next pieces on the shelf. */
+	const pAtCost = $derived.by(() => {
+		if (!costLayers) return null;
+		const qty = parseQuantity(pQty);
+		if (qty === null || qty <= 0) return null;
+		let left = qty;
+		let acc = 0;
+		for (const l of costLayers) {
+			const take = Math.min(left, l.quantity_milli);
+			acc += take * l.unit_cost_minor;
+			left -= take;
+			if (left === 0) break;
+		}
+		if (left > 0) {
+			// More than is on the shelf: the rest at the newest cost.
+			if (costFallback === null) return null;
+			acc += left * costFallback;
+		}
+		return grossUnit(acc, qty);
+	});
+
 	// ----- edit item -----
 	let itemOpen = $state(false);
 	let item = $state<WorkOrderItem | null>(null);
@@ -146,6 +197,13 @@
 	let itemPrice = $state('');
 	let itemError = $state('');
 	let itemBusy = $state(false);
+
+	/** At cost for an existing line: what its pieces cost. */
+	const itemAtCost = $derived(
+		item?.cost_minor != null && item.quantity_milli > 0
+			? grossUnit(item.cost_minor * 1000, item.quantity_milli)
+			: null
+	);
 
 	function openItem(i: WorkOrderItem) {
 		if (!isOpen) return;
@@ -157,8 +215,9 @@
 		itemOpen = true;
 	}
 
-	async function saveItem(e: SubmitEvent) {
-		e.preventDefault();
+	/** `atCost`: save at this price instead of the one in the field. */
+	async function saveItem(e?: Event, atCost?: number) {
+		e?.preventDefault();
 		if (!item) return;
 		const quantity = parseQuantity(itemQty);
 		if (quantity === null) {
@@ -166,7 +225,9 @@
 			return;
 		}
 		const body: Record<string, unknown> = { description: itemDesc, quantity_milli: quantity };
-		if (isOwner) {
+		if (isOwner && atCost !== undefined) {
+			body.unit_price_minor = atCost;
+		} else if (isOwner) {
 			if (itemPrice.trim()) {
 				const p = parseMoney(itemPrice, currency);
 				if (p === null) {
@@ -438,6 +499,11 @@
 				{/if}
 			</div>
 			<button class="btn primary block" type="submit" disabled={pBusy}>{t('parts.addToOrder')}</button>
+			{#if isOwner && pAtCost !== null}
+				<button class="btn block gap" type="button" disabled={pBusy} onclick={() => addPart(undefined, pAtCost ?? undefined)}
+					>{t('workOrders.addAtCost', { price: formatMoney(pAtCost, currency) })}</button
+				>
+			{/if}
 			<button class="btn block gap" type="button" disabled={pBusy} onclick={() => (picked = null)}
 				>{t('parts.pickAnother')}</button
 			>
@@ -467,6 +533,16 @@
 			{/if}
 		</div>
 		<button class="btn primary block" type="submit" disabled={itemBusy}>{t('common.saveChanges')}</button>
+		<!-- The cost is known for the saved quantity: after changing it, save first. -->
+		{#if isOwner && itemAtCost !== null && parseQuantity(itemQty) === item?.quantity_milli}
+			<button
+				class="btn block gap"
+				type="button"
+				disabled={itemBusy}
+				onclick={() => saveItem(undefined, itemAtCost ?? undefined)}
+				>{t('workOrders.saveAtCost', { price: formatMoney(itemAtCost, currency) })}</button
+			>
+		{/if}
 		<button class="btn danger block gap" type="button" disabled={itemBusy} onclick={deleteItem}
 			>{t('workOrders.deleteItem')}</button
 		>

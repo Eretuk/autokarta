@@ -191,8 +191,14 @@ another disk.
        proxy_set_header Host $host;
        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
        proxy_set_header X-Forwarded-Proto https;
+       client_max_body_size 16m;
    }
    ```
+
+   Invoice files (PDF, scans) of up to 15 MB are uploaded through the proxy.
+   nginx refuses bodies over 1 MB unless `client_max_body_size` is raised as
+   above; other proxies and services in front (Cloudflare, Traefik
+   middlewares) may have their own limit.
 
 6. Open `https://<your domain>`, sign in as `autokarta_admin`, choose your
    password, set your name, the currency and the distance unit on the account

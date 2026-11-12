@@ -273,6 +273,92 @@ pub fn stock_quantity_milli(v: i64) -> Result<i64, &'static str> {
     }
 }
 
+pub fn markup_percent(v: i64) -> Result<i16, &'static str> {
+    if (0..=1000).contains(&v) {
+        Ok(v as i16)
+    } else {
+        Err("invalid_markup")
+    }
+}
+
+pub fn vat_percent(v: i64) -> Result<i16, &'static str> {
+    if (0..=100).contains(&v) {
+        Ok(v as i16)
+    } else {
+        Err("invalid_vat")
+    }
+}
+
+/// Tax number (NIP, VAT ID): letters and digits only, uppercase, so the
+/// same supplier typed with or without dashes or the "PL" prefix is found.
+pub fn tax_id(raw: Option<&str>) -> Result<Option<String>, &'static str> {
+    let Some(raw) = raw.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    if !raw
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '.'))
+    {
+        return Err("invalid_tax_id");
+    }
+    let v: String = raw
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|c| c.to_ascii_uppercase())
+        .collect();
+    // A bare Polish NIP is stored without the country prefix.
+    let v = match v.strip_prefix("PL") {
+        Some(rest) if rest.len() == 10 && rest.chars().all(|c| c.is_ascii_digit()) => {
+            rest.to_string()
+        }
+        _ => v,
+    };
+    (4..=20)
+        .contains(&v.len())
+        .then_some(Some(v))
+        .ok_or("invalid_tax_id")
+}
+
+/// REGON: 9 or 14 digits, separators dropped.
+pub fn regon(raw: Option<&str>) -> Result<Option<String>, &'static str> {
+    let Some(raw) = raw.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    let v: String = raw.chars().filter(|c| !matches!(c, ' ' | '-')).collect();
+    let ok = matches!(v.len(), 9 | 14) && v.chars().all(|c| c.is_ascii_digit());
+    ok.then_some(Some(v)).ok_or("invalid_regon")
+}
+
+/// Only a sanity check: a typo is caught, an unusual address is not refused.
+pub fn email(raw: Option<&str>) -> Result<Option<String>, &'static str> {
+    let Some(v) = raw.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    let ok = v.len() <= 254
+        && !v.chars().any(|c| c.is_whitespace() || c.is_control())
+        && v.split_once('@').is_some_and(|(user, host)| {
+            !user.is_empty() && host.contains('.') && !host.contains('@')
+        });
+    ok.then(|| Some(v.to_string())).ok_or("invalid_email")
+}
+
+/// Bank account (IBAN or a local NRB): letters and digits, stored without
+/// spaces and uppercase, so it can be printed in groups of four.
+pub fn bank_account(raw: Option<&str>) -> Result<Option<String>, &'static str> {
+    let Some(raw) = raw.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    let v: String = raw
+        .chars()
+        .filter(|c| !matches!(c, ' ' | '-'))
+        .map(|c| c.to_ascii_uppercase())
+        .collect();
+    let ok = (10..=34).contains(&v.len()) && v.chars().all(|c| c.is_ascii_alphanumeric());
+    ok.then_some(Some(v)).ok_or("invalid_bank_account")
+}
+
+pub const DOCUMENT_TYPES: &[&str] = &["invoice", "receipt", "none"];
+
 /// Line total in minor units: quantity (thousandths) x unit price,
 /// rounded half up to a whole minor unit.
 pub fn line_total(quantity_milli: i64, unit_price_minor: i64) -> i64 {
@@ -283,6 +369,47 @@ pub fn line_total(quantity_milli: i64, unit_price_minor: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn organization_fields() {
+        assert_eq!(
+            regon(Some("123 456 789")).unwrap().as_deref(),
+            Some("123456789")
+        );
+        assert!(regon(Some("12345")).is_err());
+        assert_eq!(
+            email(Some(" biuro@example.pl ")).unwrap().as_deref(),
+            Some("biuro@example.pl")
+        );
+        assert!(email(Some("biuro@example")).is_err());
+        assert!(email(Some("bi uro@example.pl")).is_err());
+        assert_eq!(
+            bank_account(Some("pl61 1090 1014 0000 0712 1981 2874"))
+                .unwrap()
+                .as_deref(),
+            Some("PL61109010140000071219812874")
+        );
+        assert!(bank_account(Some("12/34")).is_err());
+    }
+
+    #[test]
+    fn tax_ids() {
+        assert_eq!(
+            tax_id(Some(" PL 123-456-78-90 ")).unwrap().as_deref(),
+            Some("1234567890")
+        );
+        assert_eq!(
+            tax_id(Some("123-45-67-890")).unwrap().as_deref(),
+            Some("1234567890")
+        );
+        assert_eq!(
+            tax_id(Some("DE123456789")).unwrap().as_deref(),
+            Some("DE123456789")
+        );
+        assert_eq!(tax_id(Some("  ")).unwrap(), None);
+        assert!(tax_id(Some("12/34")).is_err());
+        assert!(tax_id(Some("12")).is_err());
+    }
 
     #[test]
     fn vins() {

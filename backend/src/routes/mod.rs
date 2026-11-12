@@ -1,7 +1,9 @@
 mod auth;
 mod clients;
+mod deliveries;
 mod health;
 mod parts;
+mod reports;
 mod settings;
 mod users;
 mod vehicles;
@@ -35,6 +37,9 @@ pub fn router(state: AppState, static_dir: Option<&Path>) -> Router {
         .nest("/vehicles", vehicles::routes())
         .nest("/work-orders", work_orders::routes())
         .nest("/parts", parts::routes())
+        .nest("/suppliers", deliveries::supplier_routes())
+        .nest("/deliveries", deliveries::routes())
+        .nest("/reports", reports::routes())
         .fallback(|| async { AppError::NotFound });
 
     let mut app = Router::new().nest("/api", api);

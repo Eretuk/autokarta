@@ -24,14 +24,28 @@ export function setUnauthorizedHandler(fn: () => void) {
 }
 
 export async function api<T>(method: Method, path: string, body?: unknown): Promise<T> {
+	return send<T>(method, path, {
+		headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+		body: body === undefined ? undefined : JSON.stringify(body)
+	});
+}
+
+/** Uploads a file as the raw request body (no multipart); JSON comes back. */
+export async function uploadFile<T>(path: string, file: Blob): Promise<T> {
+	return send<T>('POST', path, {
+		headers: { 'Content-Type': file.type || 'application/octet-stream' },
+		body: file
+	});
+}
+
+async function send<T>(
+	method: Method,
+	path: string,
+	init: { headers?: Record<string, string>; body?: BodyInit }
+): Promise<T> {
 	let res: Response;
 	try {
-		res = await fetch(`/api${path}`, {
-			method,
-			credentials: 'same-origin',
-			headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-			body: body === undefined ? undefined : JSON.stringify(body)
-		});
+		res = await fetch(`/api${path}`, { method, credentials: 'same-origin', ...init });
 	} catch {
 		throw new ApiError(0, 'network_error');
 	}
@@ -47,6 +61,7 @@ export async function api<T>(method: Method, path: string, body?: unknown): Prom
 	} catch {
 		// Not JSON, e.g. a proxy error page.
 		if (res.status >= 500) code = 'server_unavailable';
+		if (res.status === 413) code = 'file_too_large';
 	}
 	const retry = Number(res.headers.get('Retry-After'));
 	const err = new ApiError(res.status, code, Number.isFinite(retry) && retry > 0 ? retry : undefined);

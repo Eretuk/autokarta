@@ -6,6 +6,7 @@
 	import { api, errorMessage } from '$lib/api';
 	import { debounce } from '$lib/debounce';
 	import Icon from '$lib/components/Icon.svelte';
+	import OrgReminder from '$lib/components/OrgReminder.svelte';
 	import Plate from '$lib/components/Plate.svelte';
 	import ScanButton from '$lib/components/ScanButton.svelte';
 	import { formatDistance, vehicleName } from '$lib/format';
@@ -51,6 +52,8 @@
 <svelte:head><title>{t('vehicles.title')} · Autokarta</title></svelte:head>
 
 <h1 class="visually-hidden">{t('vehicles.title')}</h1>
+
+<OrgReminder />
 
 <form class="search" role="search" onsubmit={(e) => e.preventDefault()}>
 	<label class="visually-hidden" for="vehicle-search">{t('vehicles.searchLabel')}</label>
