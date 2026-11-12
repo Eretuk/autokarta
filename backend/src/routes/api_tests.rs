@@ -808,14 +808,28 @@ async fn stock_follows_work_orders(db: PgPool) {
     let (_, p) = api.call(&mech, "GET", &part_url, None).await;
     assert_eq!(stock(&p), 8000);
 
-    // Deliveries: purchase cost is for owners only.
+    // Buying is always a delivery document: no receipts on the part itself.
     let movements = format!("{part_url}/movements");
+    let (st, v) = api
+        .call(
+            &boss,
+            "POST",
+            &movements,
+            Some(json!({"kind": "receipt", "quantity_milli": 4000, "unit_cost_minor": 2000})),
+        )
+        .await;
+    assert_eq!(
+        (st, s(&v["error"])),
+        (StatusCode::UNPROCESSABLE_ENTITY, "receipt_needs_delivery")
+    );
+
+    // A count may carry a cost (first stocktaking); only owners set it.
     let (st, _) = api
         .call(
             &mech,
             "POST",
             &movements,
-            Some(json!({"kind": "receipt", "quantity_milli": 4000, "unit_cost_minor": 2000})),
+            Some(json!({"kind": "count", "quantity_milli": 12000, "unit_cost_minor": 2000})),
         )
         .await;
     assert_eq!(st, StatusCode::FORBIDDEN);
@@ -824,7 +838,7 @@ async fn stock_follows_work_orders(db: PgPool) {
             &boss,
             "POST",
             &movements,
-            Some(json!({"kind": "receipt", "quantity_milli": 4000, "unit_cost_minor": 2000})),
+            Some(json!({"kind": "count", "quantity_milli": 12000, "unit_cost_minor": 2000})),
         )
         .await;
     assert_eq!(st, StatusCode::CREATED, "{p}");
@@ -1270,7 +1284,7 @@ async fn monthly_report_counts_purchases_use_and_stock(db: PgPool) {
             &boss,
             "POST",
             "/api/deliveries",
-            Some(json!({"invoice_date": today.to_string()})),
+            Some(json!({"invoice_date": today.to_string(), "document_type": "none"})),
         )
         .await;
     let url = format!("/api/deliveries/{}", s(&d["id"]));
@@ -1366,4 +1380,131 @@ async fn monthly_report_counts_purchases_use_and_stock(db: PgPool) {
         .call(&boss, "GET", "/api/reports/stock?date=2020-01-01", None)
         .await;
     assert_eq!(r["rows"].as_array().unwrap().len(), 0);
+}
+
+#[sqlx::test]
+async fn organization_details_and_document_types(db: PgPool) {
+    let api = Api::new(db).await;
+    let boss = api.login("boss").await;
+    let mech = api.login("mech").await;
+
+    let (_, set) = api.call(&boss, "GET", "/api/settings", None).await;
+    assert!(set["organization"]["company_name"].is_null());
+    assert_eq!(set["default_vat_percent"], 23);
+
+    let (st, set) = api
+        .call(
+            &boss,
+            "PATCH",
+            "/api/settings",
+            Some(json!({"default_vat_percent": 8, "organization": {
+                "company_name": "Demo Auto Serwis", "tax_id": "PL 111-222-33-44",
+                "regon": "123456789", "legal_address": "ul. Testowa 1\n00-001 Warszawa",
+                "email": "biuro@example.com", "contact_person": "Jan Demo",
+                "bank_account": "PL61 1090 1014 0000 0712 1981 2874"}})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{set}");
+    let org = &set["organization"];
+    assert_eq!(s(&org["tax_id"]), "1112223344");
+    assert_eq!(s(&org["bank_account"]), "PL61109010140000071219812874");
+    assert!(org["phone"].is_null());
+
+    // Absent fields stay, null clears.
+    let (_, set) = api
+        .call(
+            &boss,
+            "PATCH",
+            "/api/settings",
+            Some(json!({"organization": {"regon": null}})),
+        )
+        .await;
+    assert!(set["organization"]["regon"].is_null());
+    assert_eq!(s(&set["organization"]["company_name"]), "Demo Auto Serwis");
+    let (st, v) = api
+        .call(
+            &boss,
+            "PATCH",
+            "/api/settings",
+            Some(json!({"organization": {"email": "nope"}})),
+        )
+        .await;
+    assert_eq!(
+        (st, s(&v["error"])),
+        (StatusCode::UNPROCESSABLE_ENTITY, "invalid_email")
+    );
+    let (st, _) = api
+        .call(
+            &mech,
+            "PATCH",
+            "/api/settings",
+            Some(json!({"organization": {"company_name": "X"}})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    // Mechanics see the details (they print work orders), not the markup.
+    let (_, set) = api.call(&mech, "GET", "/api/settings", None).await;
+    assert_eq!(s(&set["organization"]["company_name"]), "Demo Auto Serwis");
+    assert!(set.get("markup_percent").is_none());
+
+    // Lines take the business VAT by default.
+    let (_, part) = api
+        .call(
+            &boss,
+            "POST",
+            "/api/parts",
+            Some(json!({"name": "Bulb H7"})),
+        )
+        .await;
+    let (_, d) = api
+        .call(&boss, "POST", "/api/deliveries", Some(json!({})))
+        .await;
+    assert_eq!(s(&d["document_type"]), "invoice");
+    let url = format!("/api/deliveries/{}", s(&d["id"]));
+    let (_, d) = api
+        .call(
+            &boss,
+            "POST",
+            &format!("{url}/items"),
+            Some(
+                json!({"part_id": s(&part["id"]), "quantity_milli": 1000, "unit_cost_minor": 1000}),
+            ),
+        )
+        .await;
+    assert_eq!(d["items"][0]["vat_percent"], 8);
+
+    // An invoice needs its number and supplier before it goes on stock;
+    // a shop receipt does not.
+    let (st, v) = api
+        .call(&boss, "POST", &format!("{url}/post"), Some(json!({})))
+        .await;
+    assert_eq!(
+        (st, s(&v["error"])),
+        (StatusCode::UNPROCESSABLE_ENTITY, "invoice_details_missing")
+    );
+    let (st, v) = api
+        .call(
+            &boss,
+            "PATCH",
+            &url,
+            Some(json!({"document_type": "paper"})),
+        )
+        .await;
+    assert_eq!(
+        (st, s(&v["error"])),
+        (StatusCode::UNPROCESSABLE_ENTITY, "invalid_document_type")
+    );
+    api.call(
+        &boss,
+        "PATCH",
+        &url,
+        Some(json!({"document_type": "receipt"})),
+    )
+    .await;
+    let (st, d) = api
+        .call(&boss, "POST", &format!("{url}/post"), Some(json!({})))
+        .await;
+    assert_eq!(st, StatusCode::OK, "{d}");
+    let (_, list) = api.call(&boss, "GET", "/api/deliveries", None).await;
+    assert_eq!(s(&list[0]["document_type"]), "receipt");
 }

@@ -374,12 +374,12 @@ async fn remove_barcode(
 
 #[derive(Deserialize)]
 struct MovementInput {
-    /// "receipt": a delivery arrived. "count": what is on the shelf now
-    /// (the difference is recorded as an adjustment).
+    /// "count": what is on the shelf now (the difference is recorded as an
+    /// adjustment). Buying goes through a delivery, never through here.
     kind: String,
     quantity_milli: i64,
-    /// Net purchase price per unit, owners only. On a count it values the
-    /// parts found (first stocktaking) and is kept only when stock goes up.
+    /// Net purchase price per unit, owners only. It values the parts found
+    /// (first stocktaking) and is kept only when stock goes up.
     unit_cost_minor: Option<i64>,
     note: Option<String>,
 }
@@ -401,10 +401,9 @@ async fn add_movement(
     lock_part(&mut tx, id).await?;
     let cost = validate::price_minor(req.unit_cost_minor).map_err(AppError::Validation)?;
     match req.kind.as_str() {
-        "receipt" => {
-            let qty = validate::quantity_milli(req.quantity_milli).map_err(AppError::Validation)?;
-            insert_movement(&mut tx, id, "receipt", qty, cost, note, user.id).await?;
-        }
+        // One way to buy parts: a delivery document with its invoice, so
+        // the cost, the shelf price and the paper always go together.
+        "receipt" => return Err(AppError::Validation("receipt_needs_delivery")),
         "count" => {
             let counted =
                 validate::stock_quantity_milli(req.quantity_milli).map_err(AppError::Validation)?;

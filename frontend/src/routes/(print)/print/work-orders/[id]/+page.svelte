@@ -12,6 +12,10 @@
 	const withPrices = $derived(wo.totals !== undefined);
 	const currency = $derived(wo.totals?.currency ?? business.currency);
 	const printedAt = new Date();
+	const org = $derived(business.organization);
+	const address = $derived(org.service_address || org.legal_address);
+	/** Printed in groups of four, as on bank documents. */
+	const bank = $derived(org.bank_account?.replace(/(.{4})(?=.)/g, '$1 ') ?? null);
 
 	// Opened from the "Print" button: go straight to the print dialog.
 	onMount(async () => {
@@ -33,6 +37,22 @@
 </svelte:head>
 
 <article class="sheet">
+	{#if org.company_name}
+		<div class="org">
+			<strong>{org.company_name}</strong>
+			{#if address}<div class="pre">{address}</div>{/if}
+			<div>
+				{#if org.tax_id}{t('organization.fields.tax_id')} {org.tax_id}{/if}{#if org.tax_id && org.regon}{' · '}{/if}{#if org.regon}{t(
+						'organization.fields.regon'
+					)}
+					{org.regon}{/if}
+			</div>
+			{#if org.phone || org.email}
+				<div>{[org.phone, org.email].filter(Boolean).join(' · ')}</div>
+			{/if}
+			{#if bank}<div class="mono">{t('organization.fields.bank_account')}: {bank}</div>{/if}
+		</div>
+	{/if}
 	<header class="top">
 		<h1>{t('workOrders.number', { number: wo.number })}</h1>
 		<div class="meta">
@@ -105,6 +125,16 @@
 </article>
 
 <style>
+	.org {
+		margin-bottom: 8mm;
+		padding-bottom: 4mm;
+		border-bottom: 1px solid #000;
+		font-size: 10pt;
+		line-height: 1.4;
+	}
+	.org strong {
+		font-size: 12pt;
+	}
 	.sheet {
 		box-sizing: border-box;
 		width: 210mm;

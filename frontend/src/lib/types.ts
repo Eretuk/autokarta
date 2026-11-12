@@ -130,11 +130,25 @@ export interface WorkOrderListRow {
 	item_count: number;
 }
 
+export interface Organization {
+	company_name: string | null;
+	tax_id: string | null;
+	regon: string | null;
+	legal_address: string | null;
+	service_address: string | null;
+	phone: string | null;
+	email: string | null;
+	contact_person: string | null;
+	bank_account: string | null;
+}
+
 export interface BusinessSettings {
 	currency: string;
 	distance_unit: DistanceUnit;
+	default_vat_percent: number;
 	/** Owners only: default markup on the net cost; null: no suggested prices. */
 	markup_percent?: number | null;
+	organization: Organization;
 }
 
 export interface PartSummary {
@@ -201,10 +215,15 @@ export interface Supplier {
 
 export type DeliveryStatus = 'draft' | 'posted';
 
+/** invoice: faktura; receipt: shop receipt (paragon); none: no invoice,
+ * e.g. a used part bought from a private person. */
+export type DocumentType = 'invoice' | 'receipt' | 'none';
+
 export interface DeliveryListRow {
 	id: string;
 	number: number;
 	status: DeliveryStatus;
+	document_type: DocumentType;
 	supplier_id: string | null;
 	supplier_name: string | null;
 	invoice_number: string | null;
@@ -248,6 +267,7 @@ export interface DeliveryDetail {
 	id: string;
 	number: number;
 	status: DeliveryStatus;
+	document_type: DocumentType;
 	supplier_id: string | null;
 	supplier_name: string | null;
 	supplier_tax_id: string | null;
@@ -262,6 +282,7 @@ export interface DeliveryDetail {
 	totals: { net_minor: number; vat_minor: number; gross_minor: number };
 	currency: string;
 	markup_percent: number | null;
+	default_vat_percent: number;
 }
 
 export interface StockValue {

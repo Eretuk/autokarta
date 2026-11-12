@@ -111,6 +111,7 @@
 					<span class="row-main">
 						<span class="name">
 							{d.supplier_name ?? t('deliveries.noSupplier')}
+							{#if d.document_type !== 'invoice'}<span class="badge muted">{t(`deliveries.docTypes.${d.document_type}`)}</span>{/if}
 							{#if d.status === 'draft'}<span class="badge accent">{t('deliveries.status.draft')}</span>{/if}
 						</span>
 						<span class="hint">

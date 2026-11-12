@@ -18,7 +18,8 @@
 		"vehicles": "Vehicles",
 		"orders": "Orders",
 		"parts": "Parts",
-		"updateAvailable": "Update available"
+		"updateAvailable": "Update available",
+		"organization": "Organization"
 	},
 	"login": {
 		"title": "Sign in",
@@ -208,7 +209,13 @@
 		"invalid_markup": "Enter the markup as a whole number from 0 to 1000, or leave it empty.",
 		"invalid_vat": "Enter VAT as a whole number from 0 to 100, e.g. 23.",
 		"invalid_time_zone": "Your device reports an unknown time zone. Check its date settings.",
-		"invalid_date": "Check the date."
+		"invalid_date": "Check the date.",
+		"receipt_needs_delivery": "Parts are received through a delivery. Use \"Receive\" on the part, or Deliveries.",
+		"invoice_details_missing": "An invoice needs its supplier and number before it goes on stock.",
+		"invalid_document_type": "Choose the document type.",
+		"invalid_regon": "REGON has 9 or 14 digits.",
+		"invalid_email": "Check the email address.",
+		"invalid_bank_account": "Check the bank account number."
 	},
 	"units": {
 		"km": "km",
@@ -391,14 +398,9 @@
 		"addBarcode": "Add barcode",
 		"removeBarcode": "Remove barcode {code}",
 		"confirmRemoveBarcode": "Remove barcode {code} from this part?",
-		"receive": "Record delivery",
-		"receiveQty": "Received, {unit}",
-		"unitCost": "Purchase price per unit, {currency}",
-		"movementNote": "Note",
-		"movementNotePlaceholder": "e.g. supplier or invoice number",
-		"receiveSubmit": "Add to stock",
-		"count": "Count stock",
-		"countHint": "Enter how many are on the shelf now. The difference is recorded.",
+		"receive": "Receive",
+		"count": "Stock count",
+		"countHint": "Enter how many are on the shelf now. This corrects the stock; it is not a purchase (buying goes through a delivery).",
 		"countQty": "On the shelf, {unit}",
 		"countSubmit": "Save count",
 		"edit": "Edit part",
@@ -422,7 +424,9 @@
 		"markup": "Markup (net)",
 		"markupValue": "{value} %",
 		"netCost": "Net purchase price per unit, {currency}",
-		"countCostHint": "Optional. Values the parts on the shelf; saved only when the count is higher than the stock."
+		"countCostHint": "Optional. Values the parts on the shelf; saved only when the count is higher than the stock.",
+		"receiveHint": "Parts are bought with a delivery document: the invoice, its file and the new shelf price stay together. Add this part to an open delivery or start a new one.",
+		"receiveIntoDraft": "Add to an open delivery"
 	},
 	"labels": {
 		"title": "QR labels",
@@ -453,7 +457,9 @@
 		"distanceUnitHint": "Default for new vehicles. Each vehicle keeps the unit its odometer shows.",
 		"confirmCurrency": "Change the currency from {from} to {to}? Prices already entered are not converted: the same amounts will be shown in {to}.",
 		"markup": "Markup on parts, %",
-		"markupHint": "Added to the net purchase price, then VAT, to suggest shelf prices when a delivery is posted. Leave empty for no suggestions."
+		"markupHint": "Added to the net purchase price, then VAT, to suggest shelf prices when a delivery is posted. Leave empty for no suggestions.",
+		"defaultVat": "Default VAT, %",
+		"defaultVatHint": "For new delivery lines. Each line can have its own rate."
 	},
 	"deliveries": {
 		"title": "Deliveries",
@@ -485,7 +491,6 @@
 		"grossShort": "gross {value}",
 		"draftHint": "Draft: nothing is on stock until you post it.",
 		"postedInfo": "On stock since {date}, posted by {name}.",
-		"invoice": "Invoice",
 		"supplier": "Supplier",
 		"supplierSearch": "Supplier name or tax number",
 		"supplierName": "Supplier name",
@@ -494,7 +499,6 @@
 		"createSupplier": "Add supplier",
 		"changeSupplier": "Change",
 		"invoiceNumber": "Invoice number",
-		"invoiceDate": "Invoice date",
 		"invoiceTotal": "Net total on the invoice, {currency}",
 		"invoiceTotalHint": "Optional: the lines are checked against it.",
 		"note": "Note",
@@ -549,11 +553,30 @@
 		"reopen": "Reopen to correct",
 		"confirmReopen": "Reopen this delivery? Its parts are taken off stock until you post it again.",
 		"delete": "Delete draft",
-		"confirmDelete": "Delete this draft with its lines and files?"
+		"confirmDelete": "Delete this draft with its lines and files?",
+		"document": "Document",
+		"documentType": "Document type",
+		"docTypes": {
+			"invoice": "Invoice",
+			"receipt": "Shop receipt",
+			"none": "No invoice"
+		},
+		"docTypeHints": {
+			"invoice": "A VAT invoice (faktura) from a supplier. Supplier and invoice number are required to post it.",
+			"receipt": "A till receipt (paragon), e.g. a small purchase in a shop. With your NIP on it, up to 450 zł gross it counts as a simplified invoice.",
+			"none": "No invoice, e.g. a used part bought from a private person or taken from a donor car. Describe it in the note."
+		},
+		"supplierRequired": "Supplier *",
+		"supplierOptional": "Seller (optional)",
+		"invoiceNumberRequired": "Invoice number *",
+		"receiptNumber": "Receipt number",
+		"documentDate": "Date",
+		"noteNone": "Where it came from",
+		"invoiceMissing": "Before posting, fill in and save: {fields}."
 	},
 	"stockCount": {
 		"title": "Stock count",
-		"intro": "Go shelf by shelf: scan or find a part, enter how many are really there, save, take the next one. The difference is recorded.",
+		"intro": "Go shelf by shelf: scan or find a part, enter how many are really there, save, take the next one. The difference is recorded. This corrects the stock and is not a purchase: buying goes through deliveries.",
 		"expected": "In the system",
 		"save": "Save count",
 		"saved": "{name}: {value} saved.",
@@ -630,5 +653,29 @@
 		"howValue": "Stock is valued at the last known net purchase price of each part.",
 		"howSale": "Work order prices are as entered in the orders.",
 		"howCount": "Parts found during a stock count are not purchases: they only add to the stock value."
+	},
+	"organization": {
+		"title": "Organization",
+		"details": "Company details",
+		"detailsHint": "Printed on work orders. Your NIP will also tell purchase invoices from the ones you issue when invoices are imported from KSeF.",
+		"missing": "Company details are incomplete: {fields}.",
+		"fillIn": "Fill in",
+		"requiredHint": "Fields marked * are needed for complete details. You can save and finish later.",
+		"serviceAddressHint": "Only if the workshop is not at the registered address.",
+		"contactHint": "The person named on invoices and work orders.",
+		"accountHint": "Company details, currency, VAT and markup are on the organization page.",
+		"incomplete": "Some company details are still missing.",
+		"open": "Open organization",
+		"fields": {
+			"company_name": "Company name",
+			"tax_id": "NIP",
+			"regon": "REGON",
+			"legal_address": "Registered address",
+			"service_address": "Workshop address",
+			"phone": "Phone",
+			"email": "Email",
+			"contact_person": "Contact person",
+			"bank_account": "Bank account"
+		}
 	}
 }

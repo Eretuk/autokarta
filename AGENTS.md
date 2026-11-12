@@ -51,7 +51,18 @@ The **vehicle** is the center of the model.
   purchase invoice (faktura) with net costs and VAT per line and the
   attached files (PDF, KSeF XML, photo), stored in PostgreSQL so the
   database backup covers them. Draft until posted; posting turns each line
-  into a receipt. The beta tester's main pain is that nobody knows what is
+  into a receipt. **Buying has exactly one way in: a delivery.** Its
+  `document_type` is `invoice` (needs supplier and number to post),
+  `receipt` (paragon) or `none` (e.g. a used part from a private person).
+  Correcting stock is a separate, clearly named thing: the stock count
+  (inventory), never a purchase.
+- `business_settings` doubles as the organization: company name, NIP,
+  REGON, addresses, phone, email, contact person, bank account, default
+  VAT, markup. Optional in the database (running installs have none);
+  the owner gets a reminder until the essentials are filled, work is never
+  blocked. Shown on printed work orders; later identifies purchase invoices
+  in KSeF by NIP. Issuing invoices to customers is out of scope (the
+  workshop already has software for that). The beta tester's main pain is that nobody knows what is
   on the shelves and the accountant sees purchases far above sales, so the
   monthly report (purchased / used at cost and at sale price / stock value)
   and the stock count mode matter more than anything decorative here.
@@ -163,8 +174,8 @@ API (all JSON, prefix `/api`):
 | POST | `/users` | owner | `{username, display_name, role, password, locale?}` |
 | PATCH | `/users/{id}` | owner | `{display_name?, role?, is_active?}`; cannot demote/deactivate self |
 | POST | `/users/{id}/password` | owner | `{password}`; signs the user out everywhere and lifts a login lockout; not for yourself (`cannot_reset_own_password`) |
-| GET | `/settings` | staff | `{currency, distance_unit}` |
-| PATCH | `/settings` | owner | `{currency?, distance_unit?}` |
+| GET | `/settings` | staff | `{currency, distance_unit, default_vat_percent, markup_percent (owner), organization: {company_name, tax_id, regon, legal_address, service_address, phone, email, contact_person, bank_account}}` |
+| PATCH | `/settings` | owner | same fields, all optional, `organization` nested; `null` clears |
 | GET | `/clients?q=` | staff | search by name or phone |
 | POST | `/clients` | staff | `{name, phone?, note?}` |
 | PUT | `/clients/{id}` | staff | same body |
@@ -184,10 +195,10 @@ API (all JSON, prefix `/api`):
 | GET/PUT | `/parts/{id}` | staff | detail with barcodes and the last 100 movements |
 | DELETE | `/parts/{id}` | owner | only if no work order uses it |
 | POST/DELETE | `/parts/{id}/barcodes` | staff | `{barcode}`; a barcode belongs to one part |
-| POST | `/parts/{id}/movements` | staff | `{kind: receipt\|count, quantity_milli, unit_cost_minor?, note?}`; a count records the difference (its cost is kept only when stock goes up) |
+| POST | `/parts/{id}/movements` | staff | `{kind: count, quantity_milli, unit_cost_minor?, note?}`; records the difference (its cost is kept only when stock goes up); `receipt` is refused with `receipt_needs_delivery` |
 | GET/POST | `/suppliers?q=` | owner | `{name, tax_id?, note?}`; NIP stored as digits/letters, `PL` prefix dropped |
 | PUT | `/suppliers/{id}` | owner | same body |
-| GET/POST | `/deliveries?status=&q=` | owner | `{supplier_id?, invoice_number?, invoice_date?, invoice_total_net_minor?, note?}`; same supplier + invoice number twice is `invoice_already_entered` |
+| GET/POST | `/deliveries?status=&q=` | owner | `{document_type?, supplier_id?, invoice_number?, invoice_date?, invoice_total_net_minor?, note?}`; same supplier + invoice number twice is `invoice_already_entered` |
 | GET/PATCH/DELETE | `/deliveries/{id}` | owner | detail with lines, files, totals, `suggested_price_minor` per line; delete only drafts |
 | POST | `/deliveries/{id}/items` | owner | `{part_id?, description?, part_number?, quantity_milli, unit_cost_minor, vat_percent?}`; drafts only |
 | PATCH/DELETE | `/deliveries/{id}/items/{item_id}` | owner | drafts only |
@@ -243,7 +254,10 @@ unmatched and turned into a new part, files, post with suggested shelf
 prices, reopen), stock count mode `/parts/count` for everyone (scan, type
 what is on the shelf, owners add the net cost), report `/parts/report`
 (months and stock on a date, CSV built in the browser: BOM, `;`, locale
-decimals, translated headers). Markup % is on the account page.
+decimals, translated headers). The owner-only organization page holds
+the company details and the business settings (currency, distance unit,
+VAT, markup); the account page only personal ones. The part page's
+"Receive" adds the part to a draft delivery instead of booking stock.
 `parts/new` returns to `back` with `created=<id>`. The backend sets `Cache-Control`: `immutable` for
 `/_app/immutable/*`, `no-cache` for other static files.
 

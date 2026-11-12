@@ -11,7 +11,9 @@
 	import SupplierPicker from '$lib/components/SupplierPicker.svelte';
 	import { formatMoney, formatQuantity, moneyInput, parseMoney, parseQuantity, quantityInput } from '$lib/format';
 	import { formatDate, formatNumber, t } from '$lib/i18n/index.svelte';
-	import type { DeliveryDetail, DeliveryItem, PartDetail, PartSummary, PartUnit, Supplier } from '$lib/types';
+	import type { DeliveryDetail, DeliveryItem, DocumentType, PartDetail, PartSummary, PartUnit, Supplier } from '$lib/types';
+
+	const DOC_TYPES: DocumentType[] = ['invoice', 'receipt', 'none'];
 
 	let { data } = $props();
 	let d = $derived<DeliveryDetail>(data.delivery);
@@ -27,7 +29,18 @@
 
 	let error = $state('');
 
+	/** An invoice goes on stock only with its issuer and number (as saved). */
+	const missing = $derived(
+		d.document_type === 'invoice'
+			? [
+					...(d.supplier_id ? [] : [t('deliveries.supplier')]),
+					...(d.invoice_number ? [] : [t('deliveries.invoiceNumber')])
+				]
+			: []
+	);
+
 	// ----- header -----
+	let docType = $state<DocumentType>('invoice');
 	let supplier = $state<Supplier | null>(null);
 	let invoiceNumber = $state('');
 	let invoiceDate = $state('');
@@ -37,6 +50,7 @@
 	let hMsg = $state<{ ok: boolean; text: string } | null>(null);
 
 	function fillHeader(x: DeliveryDetail) {
+		docType = x.document_type;
 		supplier = x.supplier_id
 			? { id: x.supplier_id, name: x.supplier_name ?? '', tax_id: x.supplier_tax_id, note: null }
 			: null;
@@ -62,10 +76,11 @@
 		hMsg = null;
 		try {
 			d = await api<DeliveryDetail>('PATCH', base, {
+				document_type: docType,
 				supplier_id: supplier?.id ?? null,
-				invoice_number: invoiceNumber.trim() || null,
+				invoice_number: docType === 'none' ? null : invoiceNumber.trim() || null,
 				invoice_date: invoiceDate || undefined,
-				invoice_total_net_minor: total,
+				invoice_total_net_minor: docType === 'none' ? null : total,
 				note: note.trim() || null
 			});
 			fillHeader(d);
@@ -88,7 +103,7 @@
 	let lArticle = $state('');
 	let lQty = $state('1');
 	let lCost = $state('');
-	let lVat = $state('23');
+	let lVat = $state('');
 	let lError = $state('');
 	let lBusy = $state(false);
 	let lQtyInput = $state<HTMLInputElement>();
@@ -100,7 +115,7 @@
 		lArticle = '';
 		lQty = '1';
 		lCost = '';
-		lVat = '23';
+		lVat = String(d.default_vat_percent);
 		lError = '';
 	}
 
@@ -233,6 +248,19 @@
 	onMount(async () => {
 		const created = page.url.searchParams.get('created');
 		const line = page.url.searchParams.get('line');
+		// From "Receive" on a part page: the line just added, open to edit.
+		const edit = page.url.searchParams.get('edit');
+		if (edit) {
+			history.replaceState(history.state, '', here);
+			const item = d.items.find((i) => i.id === edit);
+			if (item && draft) {
+				editLine(item);
+				await tick();
+				lQtyInput?.focus();
+				lQtyInput?.select();
+			}
+			return;
+		}
 		if (!created) return;
 		history.replaceState(history.state, '', here);
 		if (line && draft) {
@@ -409,29 +437,45 @@
 {#if error}<div class="notice error" role="alert">{error}</div>{/if}
 
 <section class="card">
-	<h2>{t('deliveries.invoice')}</h2>
+	<h2>{t('deliveries.document')}</h2>
 	<form onsubmit={saveHeader}>
 		{#if hMsg}
 			<div class="notice" class:ok={hMsg.ok} class:error={!hMsg.ok} role="status">{hMsg.text}</div>
 		{/if}
-		<SupplierPicker bind:selected={supplier} label={t('deliveries.supplier')} />
+		<span class="label" id="doc-type-label">{t('deliveries.documentType')}</span>
+		<div class="segmented doc-types" role="group" aria-labelledby="doc-type-label">
+			{#each DOC_TYPES as dt (dt)}
+				<button type="button" class="btn" aria-pressed={docType === dt} onclick={() => (docType = dt)}
+					>{t(`deliveries.docTypes.${dt}`)}</button
+				>
+			{/each}
+		</div>
+		<p class="hint">{t(`deliveries.docTypeHints.${docType}`)}</p>
+		<SupplierPicker
+			bind:selected={supplier}
+			label={docType === 'invoice' ? t('deliveries.supplierRequired') : t('deliveries.supplierOptional')}
+		/>
 		<div class="two-cols">
+			{#if docType !== 'none'}
+				<label class="field">
+					{docType === 'invoice' ? t('deliveries.invoiceNumberRequired') : t('deliveries.receiptNumber')}
+					<input type="text" bind:value={invoiceNumber} maxlength="60" autocomplete="off" />
+				</label>
+			{/if}
 			<label class="field">
-				{t('deliveries.invoiceNumber')}
-				<input type="text" bind:value={invoiceNumber} maxlength="60" autocomplete="off" />
-			</label>
-			<label class="field">
-				{t('deliveries.invoiceDate')}
+				{t('deliveries.documentDate')}
 				<input type="date" bind:value={invoiceDate} required />
 			</label>
 		</div>
+		{#if docType !== 'none'}
+			<label class="field">
+				{t('deliveries.invoiceTotal', { currency })}
+				<span class="hint">{t('deliveries.invoiceTotalHint')}</span>
+				<input type="text" inputmode="decimal" bind:value={invoiceTotal} maxlength="16" autocomplete="off" />
+			</label>
+		{/if}
 		<label class="field">
-			{t('deliveries.invoiceTotal', { currency })}
-			<span class="hint">{t('deliveries.invoiceTotalHint')}</span>
-			<input type="text" inputmode="decimal" bind:value={invoiceTotal} maxlength="16" autocomplete="off" />
-		</label>
-		<label class="field">
-			{t('deliveries.note')}
+			{docType === 'none' ? t('deliveries.noteNone') : t('deliveries.note')}
 			<input type="text" bind:value={note} maxlength="2000" autocomplete="off" />
 		</label>
 		<button class="btn" type="submit" disabled={hBusy}>{t('common.saveChanges')}</button>
@@ -564,9 +608,12 @@
 		<button
 			class="btn primary block"
 			type="button"
-			disabled={aBusy || d.items.length === 0 || unmatched > 0}
+			disabled={aBusy || d.items.length === 0 || unmatched > 0 || missing.length > 0}
 			onclick={openPost}>{t('deliveries.post')}</button
 		>
+		{#if missing.length > 0}
+			<p class="hint">{t('deliveries.invoiceMissing', { fields: missing.join(', ') })}</p>
+		{/if}
 		{#if unmatched > 0}<p class="hint">{t('deliveries.postBlocked')}</p>{/if}
 		<button class="btn danger block" type="button" disabled={aBusy} onclick={remove}>{t('deliveries.delete')}</button>
 	{:else}
@@ -684,6 +731,14 @@
 </Sheet>
 
 <style>
+	.label {
+		display: block;
+		font-weight: 500;
+		margin-bottom: 6px;
+	}
+	.doc-types {
+		margin-bottom: 6px;
+	}
 	.crumbs {
 		margin: 0 0 6px;
 	}

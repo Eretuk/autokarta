@@ -15,6 +15,8 @@
 		label: MessageKey;
 		icon: IconName;
 		ownerOnly?: boolean;
+		/** Not in the phone tab bar, which is full: reached from the account page there. */
+		wideOnly?: boolean;
 	}
 
 	const items: NavItem[] = [
@@ -22,6 +24,7 @@
 		{ href: '/work-orders', label: 'nav.orders', icon: 'orders' },
 		{ href: '/parts', label: 'nav.parts', icon: 'box' },
 		{ href: '/staff', label: 'nav.staff', icon: 'staff', ownerOnly: true },
+		{ href: '/organization', label: 'nav.organization', icon: 'org', ownerOnly: true, wideOnly: true },
 		{ href: '/account', label: 'nav.account', icon: 'account' }
 	];
 
@@ -61,7 +64,12 @@
 		<a href="/" class="home-link" aria-label={t('nav.home')}><Wordmark /></a>
 		<nav class="nav" aria-label={t('nav.main')}>
 			{#each visible as item (item.href)}
-				<a href={item.href} aria-current={isActive(item.href) ? 'page' : undefined}>
+				<a
+					href={item.href}
+					class:wide-only={item.wideOnly}
+					class:phone-parent={item.href === '/account' && isActive('/organization')}
+					aria-current={isActive(item.href) ? 'page' : undefined}
+				>
 					<span class="icon">
 						<Icon name={item.icon} />
 						{#if item.href === '/account' && updateDot}
@@ -167,9 +175,13 @@
 		background: var(--danger);
 		border: 2px solid var(--surface);
 	}
-	.nav a[aria-current='page'] {
+	.nav a[aria-current='page'],
+	.nav a.phone-parent {
 		color: var(--accent);
 		border-top-color: var(--accent);
+	}
+	.nav a.wide-only {
+		display: none;
 	}
 
 	/* Wide screens: the same links sit in the header. */
@@ -181,7 +193,9 @@
 			padding: 0;
 			gap: 4px;
 		}
-		.nav a {
+		.nav a,
+		.nav a.wide-only {
+			display: flex;
 			flex: none;
 			flex-direction: row;
 			min-height: var(--tap);
@@ -190,6 +204,10 @@
 			font-size: 1rem;
 			border-top: none;
 			border-radius: var(--radius);
+		}
+		/* The header shows the organization link itself. */
+		.nav a.phone-parent:not([aria-current]) {
+			color: var(--ink-muted);
 		}
 		.nav a[aria-current='page'] {
 			background: var(--accent-soft);

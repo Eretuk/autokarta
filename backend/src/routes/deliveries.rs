@@ -183,6 +183,7 @@ struct ListRow {
     id: Uuid,
     number: i64,
     status: String,
+    document_type: String,
     supplier_id: Option<Uuid>,
     supplier_name: Option<String>,
     invoice_number: Option<String>,
@@ -207,7 +208,7 @@ async fn list(
         .map_err(AppError::Validation)?;
     let q = query.q.trim();
     let rows = sqlx::query_as::<_, ListRow>(&format!(
-        "SELECT d.id, d.number, d.status, d.supplier_id, s.name AS supplier_name,
+        "SELECT d.id, d.number, d.status, d.document_type, d.supplier_id, s.name AS supplier_name,
                 d.invoice_number, d.invoice_date,
                 count(i.id) AS item_count,
                 (SELECT count(*) FROM delivery_files f WHERE f.delivery_id = d.id) AS file_count,
@@ -235,6 +236,9 @@ async fn list(
 
 #[derive(Deserialize)]
 struct CreateDelivery {
+    /// "invoice" (default), "receipt" (paragon) or "none" (e.g. a used part
+    /// bought from a private person).
+    document_type: Option<String>,
     supplier_id: Option<Uuid>,
     invoice_number: Option<String>,
     invoice_date: Option<Date>,
@@ -260,20 +264,30 @@ fn invoice_number(raw: Option<&str>) -> AppResult<Option<String>> {
     v(validate::optional_text(raw, 60))
 }
 
+fn document_type(raw: &str) -> AppResult<String> {
+    v(validate::one_of(
+        raw,
+        validate::DOCUMENT_TYPES,
+        "invalid_document_type",
+    ))
+}
+
 async fn create(
     State(state): State<AppState>,
     Owner(owner): Owner,
     Json(req): Json<CreateDelivery>,
 ) -> AppResult<(StatusCode, Json<DeliveryDetail>)> {
     let invoice_number = invoice_number(req.invoice_number.as_deref())?;
+    let doc_type = document_type(req.document_type.as_deref().unwrap_or("invoice"))?;
     let total = v(validate::price_minor(req.invoice_total_net_minor))?;
     let note = v(validate::optional_text(req.note.as_deref(), 2000))?;
     let mut tx = state.db.begin().await?;
     ensure_supplier(&mut tx, req.supplier_id).await?;
     let id: Uuid = sqlx::query_scalar(
         "INSERT INTO deliveries
-             (supplier_id, invoice_number, invoice_date, invoice_total_net_minor, note, created_by)
-         VALUES ($1, $2, COALESCE($3, current_date), $4, $5, $6)
+             (supplier_id, invoice_number, invoice_date, invoice_total_net_minor, note, created_by,
+              document_type)
+         VALUES ($1, $2, COALESCE($3, current_date), $4, $5, $6, $7)
          RETURNING id",
     )
     .bind(req.supplier_id)
@@ -282,6 +296,7 @@ async fn create(
     .bind(total)
     .bind(note)
     .bind(owner.id)
+    .bind(doc_type)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| conflict_on(e, DELIVERY_UNIQUE))?;
@@ -294,6 +309,7 @@ async fn create(
 /// be corrected after posting too: it does not change the stock.
 #[derive(Deserialize)]
 struct UpdateDelivery {
+    document_type: Option<String>,
     #[serde(default, deserialize_with = "deserialize_some")]
     supplier_id: Option<Option<Uuid>>,
     #[serde(default, deserialize_with = "deserialize_some")]
@@ -311,6 +327,11 @@ async fn update(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateDelivery>,
 ) -> AppResult<Json<DeliveryDetail>> {
+    let doc_type = req
+        .document_type
+        .as_deref()
+        .map(document_type)
+        .transpose()?;
     let invoice = req
         .invoice_number
         .as_ref()
@@ -338,6 +359,7 @@ async fn update(
                 invoice_date = COALESCE($6, invoice_date),
                 invoice_total_net_minor = CASE WHEN $7 THEN $8 ELSE invoice_total_net_minor END,
                 note = CASE WHEN $9 THEN $10 ELSE note END,
+                document_type = COALESCE($11, document_type),
                 updated_at = now()
           WHERE id = $1",
     )
@@ -351,6 +373,7 @@ async fn update(
     .bind(total.flatten())
     .bind(note.is_some())
     .bind(note.flatten())
+    .bind(doc_type)
     .execute(&mut *tx)
     .await
     .map_err(|e| conflict_on(e, DELIVERY_UNIQUE))?;
@@ -440,7 +463,10 @@ async fn add_item(
     let part_number = v(validate::optional_text(req.part_number.as_deref(), 60))?;
     let quantity = v(validate::quantity_milli(req.quantity_milli))?;
     let cost = v(validate::price_minor(Some(req.unit_cost_minor)))?;
-    let vat = v(validate::vat_percent(req.vat_percent.unwrap_or(23)))?;
+    let vat = match req.vat_percent {
+        Some(p) => v(validate::vat_percent(p))?,
+        None => settings::load(&state.db).await?.default_vat_percent,
+    };
 
     let mut tx = state.db.begin().await?;
     lock_draft(&mut tx, id).await?;
@@ -615,6 +641,18 @@ async fn post_delivery(
 
     let mut tx = state.db.begin().await?;
     lock_draft(&mut tx, id).await?;
+    // An invoice is only an invoice with its number and its issuer: that is
+    // what the accountant and a tax inspection look for.
+    let incomplete_invoice: bool = sqlx::query_scalar(
+        "SELECT document_type = 'invoice' AND (supplier_id IS NULL OR invoice_number IS NULL)
+           FROM deliveries WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if incomplete_invoice {
+        return Err(AppError::Validation("invoice_details_missing"));
+    }
     let (lines, unmatched): (i64, i64) = sqlx::query_as(
         "SELECT count(*), count(*) FILTER (WHERE part_id IS NULL)
            FROM delivery_items WHERE delivery_id = $1",
@@ -884,6 +922,7 @@ struct DeliveryRow {
     id: Uuid,
     number: i64,
     status: String,
+    document_type: String,
     supplier_id: Option<Uuid>,
     supplier_name: Option<String>,
     supplier_tax_id: Option<String>,
@@ -952,6 +991,7 @@ pub struct DeliveryDetail {
     totals: Totals,
     currency: String,
     markup_percent: Option<i16>,
+    default_vat_percent: i16,
 }
 
 async fn detail(
@@ -974,7 +1014,7 @@ pub fn suggested_price(unit_cost_minor: i64, vat_percent: i16, markup_percent: i
 
 async fn load_detail(state: &AppState, id: Uuid) -> AppResult<DeliveryDetail> {
     let delivery = sqlx::query_as::<_, DeliveryRow>(
-        "SELECT d.id, d.number, d.status, d.supplier_id, s.name AS supplier_name,
+        "SELECT d.id, d.number, d.status, d.document_type, d.supplier_id, s.name AS supplier_name,
                 s.tax_id AS supplier_tax_id, d.invoice_number, d.invoice_date,
                 d.invoice_total_net_minor, d.note, d.posted_at, u.display_name AS posted_by_name
            FROM deliveries d
@@ -1048,6 +1088,7 @@ async fn load_detail(state: &AppState, id: Uuid) -> AppResult<DeliveryDetail> {
         totals,
         currency: business.currency,
         markup_percent: markup,
+        default_vat_percent: business.default_vat_percent,
     })
 }
 

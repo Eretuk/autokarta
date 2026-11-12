@@ -7,6 +7,7 @@
 	import { api, errorMessage } from '$lib/api';
 	import { debounce } from '$lib/debounce';
 	import Icon from '$lib/components/Icon.svelte';
+	import OrgReminder from '$lib/components/OrgReminder.svelte';
 	import ScanButton from '$lib/components/ScanButton.svelte';
 	import { formatStock } from '$lib/format';
 	import { t } from '$lib/i18n/index.svelte';
@@ -95,6 +96,8 @@
 <svelte:head><title>{t('parts.title')} · Autokarta</title></svelte:head>
 
 <h1 class="visually-hidden">{t('parts.title')}</h1>
+
+<OrgReminder />
 
 <form class="search" role="search" onsubmit={(e) => e.preventDefault()}>
 	<label class="visually-hidden" for="part-search">{t('parts.searchLabel')}</label>

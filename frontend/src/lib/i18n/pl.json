@@ -18,7 +18,8 @@
 		"vehicles": "Pojazdy",
 		"orders": "Zlecenia",
 		"parts": "Części",
-		"updateAvailable": "Dostępna aktualizacja"
+		"updateAvailable": "Dostępna aktualizacja",
+		"organization": "Organizacja"
 	},
 	"login": {
 		"title": "Logowanie",
@@ -212,7 +213,13 @@
 		"invalid_markup": "Wpisz narzut jako liczbę całkowitą od 0 do 1000 albo zostaw puste.",
 		"invalid_vat": "Wpisz VAT jako liczbę całkowitą od 0 do 100, np. 23.",
 		"invalid_time_zone": "Urządzenie podaje nieznaną strefę czasową. Sprawdź ustawienia daty.",
-		"invalid_date": "Sprawdź datę."
+		"invalid_date": "Sprawdź datę.",
+		"receipt_needs_delivery": "Części przyjmuje się przez dostawę. Użyj „Przyjmij” przy części albo Dostaw.",
+		"invoice_details_missing": "Faktura musi mieć dostawcę i numer, zanim trafi na stan.",
+		"invalid_document_type": "Wybierz rodzaj dokumentu.",
+		"invalid_regon": "REGON ma 9 lub 14 cyfr.",
+		"invalid_email": "Sprawdź adres e-mail.",
+		"invalid_bank_account": "Sprawdź numer konta."
 	},
 	"units": {
 		"km": "km",
@@ -401,14 +408,9 @@
 		"addBarcode": "Dodaj kod",
 		"removeBarcode": "Usuń kod {code}",
 		"confirmRemoveBarcode": "Usunąć kod {code} z tej części?",
-		"receive": "Przyjmij dostawę",
-		"receiveQty": "Przyjęto, {unit}",
-		"unitCost": "Cena zakupu za jednostkę, {currency}",
-		"movementNote": "Notatka",
-		"movementNotePlaceholder": "np. dostawca lub numer faktury",
-		"receiveSubmit": "Dodaj na stan",
-		"count": "Policz stan",
-		"countHint": "Wpisz, ile jest teraz na półce. Różnica zostanie zapisana.",
+		"receive": "Przyjmij",
+		"count": "Inwentaryzacja",
+		"countHint": "Wpisz, ile jest teraz na półce. To korekta stanu, nie zakup (zakup idzie przez dostawę).",
 		"countQty": "Na półce, {unit}",
 		"countSubmit": "Zapisz stan",
 		"edit": "Edytuj część",
@@ -432,7 +434,9 @@
 		"markup": "Narzut (netto)",
 		"markupValue": "{value} %",
 		"netCost": "Cena zakupu netto za sztukę, {currency}",
-		"countCostHint": "Opcjonalnie. Wycenia części na półce; zapisywana tylko, gdy policzono więcej niż jest w stanie."
+		"countCostHint": "Opcjonalnie. Wycenia części na półce; zapisywana tylko, gdy policzono więcej niż jest w stanie.",
+		"receiveHint": "Części przyjmuje się dokumentem dostawy: faktura, jej plik i nowa cena na półce zostają razem. Dodaj tę część do otwartej dostawy albo zacznij nową.",
+		"receiveIntoDraft": "Dodaj do otwartej dostawy"
 	},
 	"labels": {
 		"title": "Etykiety QR",
@@ -463,7 +467,9 @@
 		"distanceUnitHint": "Domyślna dla nowych pojazdów. Każdy pojazd ma jednostkę swojego licznika.",
 		"confirmCurrency": "Zmienić walutę z {from} na {to}? Wpisane już ceny nie zostaną przeliczone: te same kwoty będą pokazane w {to}.",
 		"markup": "Narzut na części, %",
-		"markupHint": "Doliczany do ceny zakupu netto, a potem VAT, aby podpowiedzieć cenę na półce przy przyjęciu dostawy. Puste: bez podpowiedzi."
+		"markupHint": "Doliczany do ceny zakupu netto, a potem VAT, aby podpowiedzieć cenę na półce przy przyjęciu dostawy. Puste: bez podpowiedzi.",
+		"defaultVat": "Domyślny VAT, %",
+		"defaultVatHint": "Dla nowych pozycji dostawy. Każda pozycja może mieć własną stawkę."
 	},
 	"deliveries": {
 		"title": "Dostawy",
@@ -499,7 +505,6 @@
 		"grossShort": "brutto {value}",
 		"draftHint": "Szkic: nic nie trafia na stan, dopóki go nie przyjmiesz.",
 		"postedInfo": "Na stanie od {date}, przyjął(a): {name}.",
-		"invoice": "Faktura",
 		"supplier": "Dostawca",
 		"supplierSearch": "Nazwa dostawcy lub NIP",
 		"supplierName": "Nazwa dostawcy",
@@ -508,7 +513,6 @@
 		"createSupplier": "Dodaj dostawcę",
 		"changeSupplier": "Zmień",
 		"invoiceNumber": "Numer faktury",
-		"invoiceDate": "Data faktury",
 		"invoiceTotal": "Suma netto z faktury, {currency}",
 		"invoiceTotalHint": "Opcjonalnie: pozycje są z nią porównywane.",
 		"note": "Uwagi",
@@ -565,11 +569,30 @@
 		"reopen": "Otwórz do poprawy",
 		"confirmReopen": "Otworzyć tę dostawę ponownie? Jej części zejdą ze stanu, dopóki jej nie przyjmiesz znowu.",
 		"delete": "Usuń szkic",
-		"confirmDelete": "Usunąć ten szkic z pozycjami i plikami?"
+		"confirmDelete": "Usunąć ten szkic z pozycjami i plikami?",
+		"document": "Dokument",
+		"documentType": "Rodzaj dokumentu",
+		"docTypes": {
+			"invoice": "Faktura",
+			"receipt": "Paragon",
+			"none": "Bez faktury"
+		},
+		"docTypeHints": {
+			"invoice": "Faktura VAT od dostawcy. Do przyjęcia na stan potrzebne są dostawca i numer faktury.",
+			"receipt": "Paragon, np. drobny zakup w sklepie. Paragon z Twoim NIP do 450 zł brutto jest fakturą uproszczoną.",
+			"none": "Bez faktury, np. część używana kupiona od osoby prywatnej albo zdjęta z dawcy. Opisz to w notatce."
+		},
+		"supplierRequired": "Dostawca *",
+		"supplierOptional": "Sprzedawca (opcjonalnie)",
+		"invoiceNumberRequired": "Numer faktury *",
+		"receiptNumber": "Numer paragonu",
+		"documentDate": "Data",
+		"noteNone": "Skąd pochodzi",
+		"invoiceMissing": "Przed przyjęciem uzupełnij i zapisz: {fields}."
 	},
 	"stockCount": {
 		"title": "Inwentaryzacja",
-		"intro": "Półka po półce: zeskanuj lub znajdź część, wpisz, ile jej naprawdę jest, zapisz, następna. Różnica zostaje zapisana.",
+		"intro": "Półka po półce: zeskanuj lub znajdź część, wpisz, ile jej naprawdę jest, zapisz, następna. Różnica zostaje zapisana. To korekta stanu, nie zakup: zakupy idą przez dostawy.",
 		"expected": "W systemie",
 		"save": "Zapisz stan",
 		"saved": "{name}: zapisano {value}.",
@@ -660,5 +683,29 @@
 		"howValue": "Stan jest wyceniany według ostatniej znanej ceny zakupu netto każdej części.",
 		"howSale": "Ceny ze zleceń są takie, jak wpisano w zleceniach.",
 		"howCount": "Części znalezione przy inwentaryzacji to nie zakupy: tylko zwiększają wartość stanu."
+	},
+	"organization": {
+		"title": "Organizacja",
+		"details": "Dane firmy",
+		"detailsHint": "Drukowane na zleceniach. Twój NIP posłuży też do odróżnienia faktur zakupowych od wystawionych przy imporcie z KSeF.",
+		"missing": "Dane firmy są niepełne: {fields}.",
+		"fillIn": "Uzupełnij",
+		"requiredHint": "Pola oznaczone * są potrzebne do pełnych danych. Możesz zapisać i dokończyć później.",
+		"serviceAddressHint": "Tylko jeśli warsztat nie jest pod adresem siedziby.",
+		"contactHint": "Osoba podawana na fakturach i zleceniach.",
+		"accountHint": "Dane firmy, waluta, VAT i narzut są na stronie organizacji.",
+		"incomplete": "Brakuje jeszcze części danych firmy.",
+		"open": "Otwórz organizację",
+		"fields": {
+			"company_name": "Nazwa firmy",
+			"tax_id": "NIP",
+			"regon": "REGON",
+			"legal_address": "Adres siedziby",
+			"service_address": "Adres warsztatu",
+			"phone": "Telefon",
+			"email": "E-mail",
+			"contact_person": "Osoba kontaktowa",
+			"bank_account": "Numer konta"
+		}
 	}
 }
