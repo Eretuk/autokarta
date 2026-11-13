@@ -28,6 +28,7 @@ use crate::{
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list).post(create))
+        .route("/labour", get(labour))
         .route("/{id}", get(detail).patch(update))
         .route("/{id}/items", axum::routing::post(add_item))
         .route(
@@ -299,6 +300,75 @@ async fn lock_open_order(conn: &mut PgConnection, id: Uuid) -> AppResult<()> {
         return Err(AppError::Conflict("work_order_closed"));
     }
     Ok(())
+}
+
+// ---------- labour remembered ----------
+
+#[derive(Deserialize)]
+struct LabourQuery {
+    #[serde(default)]
+    q: String,
+}
+
+/// A job done before, to be picked instead of typed again.
+#[derive(Serialize, sqlx::FromRow)]
+struct Labour {
+    /// As written the last time.
+    description: String,
+    quantity_milli: i64,
+    /// The last price it was given; owners only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unit_price_minor: Option<i64>,
+    uses: i64,
+}
+
+/// Labour lines of past orders, one per description (case and surrounding
+/// spaces ignored), the most used first. There is no separate catalogue to
+/// keep: whatever was written once is offered again.
+async fn labour(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Query(query): Query<LabourQuery>,
+) -> AppResult<Json<Vec<Labour>>> {
+    let q = query.q.trim();
+    let (pattern, limit) = if q.is_empty() {
+        (None, 6_i64)
+    } else {
+        (Some(super::like_pattern(q)), 8)
+    };
+    let mut rows = sqlx::query_as::<_, Labour>(
+        "WITH l AS (
+             SELECT lower(btrim(i.description)) AS key, i.description, i.quantity_milli,
+                    i.unit_price_minor, i.created_at
+               FROM work_order_items i
+               JOIN work_orders w ON w.id = i.work_order_id
+              WHERE i.kind = 'labour' AND w.status <> 'cancelled'
+                AND ($1::text IS NULL OR i.description ILIKE $1)
+         ),
+         latest AS (
+             SELECT DISTINCT ON (key) key, description, quantity_milli, created_at
+               FROM l ORDER BY key, created_at DESC
+         ),
+         priced AS (
+             SELECT DISTINCT ON (key) key, unit_price_minor
+               FROM l WHERE unit_price_minor IS NOT NULL ORDER BY key, created_at DESC
+         ),
+         uses AS (SELECT key, count(*) AS uses FROM l GROUP BY key)
+         SELECT latest.description, latest.quantity_milli, priced.unit_price_minor, uses.uses
+           FROM latest
+           JOIN uses USING (key)
+           LEFT JOIN priced USING (key)
+          ORDER BY uses.uses DESC, latest.created_at DESC
+          LIMIT $2",
+    )
+    .bind(pattern)
+    .bind(limit)
+    .fetch_all(&state.db)
+    .await?;
+    if !user.is_owner() {
+        rows.iter_mut().for_each(|r| r.unit_price_minor = None);
+    }
+    Ok(Json(rows))
 }
 
 // ---------- items ----------

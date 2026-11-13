@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { api, errorMessage } from '$lib/api';
+	import { debounce } from '$lib/debounce';
 	import Icon from '$lib/components/Icon.svelte';
 	import PartPicker from '$lib/components/PartPicker.svelte';
 	import Plate from '$lib/components/Plate.svelte';
@@ -20,7 +21,7 @@
 	import { parseReading, withLowerConfirm } from '$lib/odometer';
 	import { session } from '$lib/session.svelte';
 	import { business } from '$lib/settings.svelte';
-	import type { PartDetail, PartSummary, WorkOrderDetail, WorkOrderItem, WorkOrderStatus } from '$lib/types';
+	import type { LabourSuggestion, PartDetail, PartSummary, WorkOrderDetail, WorkOrderItem, WorkOrderStatus } from '$lib/types';
 
 	let { data } = $props();
 	// Follows navigation to another order; local updates overwrite it.
@@ -40,6 +41,32 @@
 	let price = $state('');
 	let addBusy = $state(false);
 	let descInput = $state<HTMLInputElement>();
+
+	// Jobs written before, offered again: the most used while the field is
+	// empty, the matching ones while typing.
+	let suggestions = $state<LabourSuggestion[]>([]);
+	let suggestSeq = 0;
+	const loadSuggestions = debounce(async (q: string) => {
+		const seq = ++suggestSeq;
+		try {
+			const rows = await api<LabourSuggestion[]>('GET', `/work-orders/labour?q=${encodeURIComponent(q)}`);
+			if (seq === suggestSeq) suggestions = rows;
+		} catch {
+			// Only a convenience: typing still works.
+		}
+	}, 200);
+	$effect(() => {
+		if (isOpen) loadSuggestions(desc.trim());
+	});
+	const shownSuggestions = $derived(
+		suggestions.filter((s) => s.description.trim().toLowerCase() !== desc.trim().toLowerCase())
+	);
+
+	function useSuggestion(s: LabourSuggestion) {
+		desc = s.description;
+		qty = quantityInput(s.quantity_milli);
+		if (isOwner) price = moneyInput(s.unit_price_minor, currency);
+	}
 
 	async function addItem(e: SubmitEvent) {
 		e.preventDefault();
@@ -427,6 +454,21 @@
 				placeholder={t('workOrders.addWorkPlaceholder')}
 			/>
 		</label>
+		{#if shownSuggestions.length > 0}
+			<div class="suggestions" aria-label={t('workOrders.suggestions')}>
+				{#each shownSuggestions as s (s.description)}
+					<button class="suggestion" type="button" onclick={() => useSuggestion(s)}>
+						<span>{s.description}</span>
+						{#if s.quantity_milli !== 1000 || (isOwner && s.unit_price_minor != null)}
+							<span class="hint"
+								>× {formatQuantity(s.quantity_milli)}{#if isOwner && s.unit_price_minor != null}{' · ' +
+										formatMoney(s.unit_price_minor, currency)}{/if}</span
+							>
+						{/if}
+					</button>
+				{/each}
+			</div>
+		{/if}
 		<div class="two-cols">
 			<label class="field">
 				{t('workOrders.quantity')}
@@ -639,6 +681,29 @@
 	}
 	.add-part {
 		margin-top: 16px;
+	}
+	.suggestions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin: -4px 0 14px;
+	}
+	.suggestion {
+		display: grid;
+		gap: 2px;
+		min-height: 48px;
+		max-width: 100%;
+		padding: 6px 12px;
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		background: var(--surface);
+		color: var(--ink);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.suggestion .hint {
+		font-size: 0.85rem;
 	}
 	.picked {
 		display: grid;

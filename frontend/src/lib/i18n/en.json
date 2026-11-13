@@ -339,6 +339,7 @@
 		},
 		"addWork": "Add work",
 		"addWorkPlaceholder": "e.g. Oil and filter change",
+		"suggestions": "Done before",
 		"quantity": "Quantity / hours",
 		"unitPrice": "Gross price, {currency}",
 		"addItem": "Add work",

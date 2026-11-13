@@ -334,3 +334,12 @@ export interface StockReport {
 	total: StockValue;
 	rows: StockReportRow[];
 }
+
+/** A job written in an earlier order, offered again. */
+export interface LabourSuggestion {
+	description: string;
+	quantity_milli: number;
+	/** Owners only. */
+	unit_price_minor?: number | null;
+	uses: number;
+}

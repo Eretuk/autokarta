@@ -709,6 +709,92 @@ async fn parts_catalogue_search_and_prices(db: PgPool) {
 }
 
 #[sqlx::test]
+async fn labour_written_once_is_offered_again(db: PgPool) {
+    let api = Api::new(db).await;
+    let boss = api.login("boss").await;
+    let mech = api.login("mech").await;
+    let (_, v) = api
+        .call(
+            &boss,
+            "POST",
+            "/api/vehicles",
+            Some(json!({"plate": "WX 1"})),
+        )
+        .await;
+    let vid = s(&v["id"]).to_string();
+    let mut orders = Vec::new();
+    for _ in 0..2 {
+        let (_, wo) = api
+            .call(
+                &boss,
+                "POST",
+                "/api/work-orders",
+                Some(json!({"vehicle_id": vid})),
+            )
+            .await;
+        orders.push(format!("/api/work-orders/{}", s(&wo["id"])));
+    }
+    let lines = [
+        (0, "Oil change", 500, Some(16500)),
+        (0, "Wheel alignment", 1000, Some(10000)),
+        (1, " oil change ", 1000, None),
+        (1, "Brake 100% check", 1000, Some(5000)),
+    ];
+    for (o, desc, qty, price) in lines {
+        let (st, _) = api
+            .call(
+                &boss,
+                "POST",
+                &format!("{}/items", orders[o]),
+                Some(
+                    json!({"description": desc, "quantity_milli": qty, "unit_price_minor": price}),
+                ),
+            )
+            .await;
+        assert_eq!(st, StatusCode::CREATED);
+    }
+
+    // Same job in other case/spaces counts once; the last price stays.
+    let (st, l) = api
+        .call(&boss, "GET", "/api/work-orders/labour", None)
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(l.as_array().unwrap().len(), 3, "{l}");
+    assert_eq!(l[0]["description"], "oil change");
+    assert_eq!(l[0]["uses"], 2);
+    assert_eq!(l[0]["quantity_milli"], 1000);
+    assert_eq!(l[0]["unit_price_minor"], 16500);
+
+    let (_, l) = api
+        .call(&boss, "GET", "/api/work-orders/labour?q=100%25", None)
+        .await;
+    assert_eq!(l.as_array().unwrap().len(), 1, "{l}");
+    assert_eq!(l[0]["description"], "Brake 100% check");
+
+    let (_, l) = api
+        .call(&mech, "GET", "/api/work-orders/labour?q=OIL", None)
+        .await;
+    assert_eq!(l.as_array().unwrap().len(), 1, "{l}");
+    assert!(l[0].get("unit_price_minor").is_none(), "{l}");
+
+    // Cancelled orders are not remembered.
+    let (st, _) = api
+        .call(
+            &boss,
+            "PATCH",
+            &orders[1],
+            Some(json!({"status": "cancelled"})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    let (_, l) = api
+        .call(&boss, "GET", "/api/work-orders/labour?q=oil", None)
+        .await;
+    assert_eq!(l[0]["uses"], 1);
+    assert_eq!(l[0]["description"], "Oil change");
+}
+
+#[sqlx::test]
 async fn stock_follows_work_orders(db: PgPool) {
     let api = Api::new(db).await;
     let mech = api.login("mech").await;

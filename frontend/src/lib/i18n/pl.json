@@ -349,6 +349,7 @@
 		},
 		"addWork": "Dodaj pracę",
 		"addWorkPlaceholder": "np. wymiana oleju i filtra",
+		"suggestions": "Wykonywane wcześniej",
 		"quantity": "Ilość / godziny",
 		"unitPrice": "Cena brutto, {currency}",
 		"addItem": "Dodaj pracę",
