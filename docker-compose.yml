@@ -9,7 +9,7 @@ name: autokarta
 # The app version. Not a secret, so it lives here and not in .env (which is
 # often kept encrypted): to update, change it or download this file again from
 # the new release. CI checks it against the release tag.
-x-image: &image ghcr.io/eretuk/autokarta:0.2.2
+x-image: &image ghcr.io/eretuk/autokarta:0.3.0
 
 services:
   db:
