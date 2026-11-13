@@ -201,7 +201,8 @@ another disk.
    middlewares) may have their own limit.
 
 6. Open `https://<your domain>`, sign in as `autokarta_admin`, choose your
-   password, set your name, the currency and the distance unit on the account
+   password and set your name on the account page, fill in the company
+   details, currency, distance unit, VAT and markup on the organization
    page, and add staff accounts on the staff page. On a phone the app can be installed to the home screen.
 
 If the image is private (a fork, for example), log in to the registry once

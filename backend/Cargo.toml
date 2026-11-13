@@ -1,6 +1,6 @@
 [package]
 name = "autokarta"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2021"
 license-file = "../LICENSE.md"
 description = "Workshop, parts and fleet management for small auto services"
