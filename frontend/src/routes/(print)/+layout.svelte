@@ -6,6 +6,14 @@
 
 	let { children } = $props();
 
+	// The page background is set through a class while this layout is on
+	// screen: a plain :global(body) rule would stay in the app once this
+	// CSS is loaded, and hovering the print link already loads it.
+	$effect(() => {
+		document.body.classList.add('print-page');
+		return () => document.body.classList.remove('print-page');
+	});
+
 	// Opened in a new tab or straight from a link there is nothing to go
 	// back to: go to the app instead.
 	function back() {
@@ -24,7 +32,7 @@
 </div>
 
 <style>
-	:global(body) {
+	:global(body.print-page) {
 		background: var(--surface-2);
 	}
 	.toolbar {
@@ -51,7 +59,7 @@
 			overflow: visible;
 			padding: 0;
 		}
-		:global(body) {
+		:global(body.print-page) {
 			background: #fff;
 		}
 	}
