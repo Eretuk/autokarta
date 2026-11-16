@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { api, errorMessage } from '$lib/api';
+	import { debounce } from '$lib/debounce';
 	import Icon from '$lib/components/Icon.svelte';
 	import PartPicker from '$lib/components/PartPicker.svelte';
 	import Plate from '$lib/components/Plate.svelte';
@@ -20,7 +21,7 @@
 	import { parseReading, withLowerConfirm } from '$lib/odometer';
 	import { session } from '$lib/session.svelte';
 	import { business } from '$lib/settings.svelte';
-	import type { PartDetail, PartSummary, WorkOrderDetail, WorkOrderItem, WorkOrderStatus } from '$lib/types';
+	import type { LabourSuggestion, PartDetail, PartSummary, WorkOrderDetail, WorkOrderItem, WorkOrderStatus } from '$lib/types';
 
 	let { data } = $props();
 	// Follows navigation to another order; local updates overwrite it.
@@ -34,44 +35,75 @@
 
 	let error = $state('');
 
-	// ----- quick add -----
+	// ----- add work -----
+	let workOpen = $state(false);
+	let wError = $state('');
 	let desc = $state('');
 	let qty = $state('1');
 	let price = $state('');
 	let addBusy = $state(false);
-	let descInput = $state<HTMLInputElement>();
+
+	function openWork() {
+		desc = '';
+		qty = '1';
+		price = '';
+		wError = '';
+		workOpen = true;
+	}
+
+	// Jobs written before, offered again: the most used while the field is
+	// empty, the matching ones while typing.
+	let suggestions = $state<LabourSuggestion[]>([]);
+	let suggestSeq = 0;
+	const loadSuggestions = debounce(async (q: string) => {
+		const seq = ++suggestSeq;
+		try {
+			const rows = await api<LabourSuggestion[]>('GET', `/work-orders/labour?q=${encodeURIComponent(q)}`);
+			if (seq === suggestSeq) suggestions = rows;
+		} catch {
+			// Only a convenience: typing still works.
+		}
+	}, 200);
+	$effect(() => {
+		if (workOpen) loadSuggestions(desc.trim());
+	});
+	const shownSuggestions = $derived(
+		suggestions.filter((s) => s.description.trim().toLowerCase() !== desc.trim().toLowerCase())
+	);
+
+	function useSuggestion(s: LabourSuggestion) {
+		desc = s.description;
+		qty = quantityInput(s.quantity_milli);
+		if (isOwner) price = moneyInput(s.unit_price_minor, currency);
+	}
 
 	async function addItem(e: SubmitEvent) {
 		e.preventDefault();
 		const quantity = parseQuantity(qty);
 		if (quantity === null) {
-			error = t('errors.invalid_quantity');
+			wError = t('errors.invalid_quantity');
 			return;
 		}
 		let unitPrice: number | undefined;
 		if (isOwner && price.trim()) {
 			const p = parseMoney(price, currency);
 			if (p === null) {
-				error = t('errors.invalid_price');
+				wError = t('errors.invalid_price');
 				return;
 			}
 			unitPrice = p;
 		}
 		addBusy = true;
-		error = '';
+		wError = '';
 		try {
 			wo = await api<WorkOrderDetail>('POST', `${base}/items`, {
 				description: desc,
 				quantity_milli: quantity,
 				unit_price_minor: unitPrice
 			});
-			desc = '';
-			qty = '1';
-			price = '';
-			await tick();
-			descInput?.focus();
+			workOpen = false;
 		} catch (err) {
-			error = errorMessage(err);
+			wError = errorMessage(err);
 		} finally {
 			addBusy = false;
 		}
@@ -411,36 +443,10 @@
 {/if}
 
 {#if isOpen}
-	<button class="btn block add-part" type="button" onclick={openPart}><Icon name="box" />{t('workOrders.addPart')}</button>
-
-	<form class="add card" onsubmit={addItem}>
-		<label class="field">
-			{t('workOrders.addWork')}
-			<input
-				bind:this={descInput}
-				type="text"
-				bind:value={desc}
-				maxlength="500"
-				required
-				autocomplete="off"
-				enterkeyhint="done"
-				placeholder={t('workOrders.addWorkPlaceholder')}
-			/>
-		</label>
-		<div class="two-cols">
-			<label class="field">
-				{t('workOrders.quantity')}
-				<input type="text" inputmode="decimal" bind:value={qty} maxlength="12" autocomplete="off" />
-			</label>
-			{#if isOwner}
-				<label class="field">
-					{t('workOrders.unitPrice', { currency })}
-					<input type="text" inputmode="decimal" bind:value={price} maxlength="16" autocomplete="off" />
-				</label>
-			{/if}
-		</div>
-		<button class="btn primary block" type="submit" disabled={addBusy || !desc.trim()}>{t('workOrders.addItem')}</button>
-	</form>
+	<div class="actions add-buttons">
+		<button class="btn" type="button" onclick={openPart}><Icon name="box" />{t('workOrders.partButton')}</button>
+		<button class="btn" type="button" onclick={openWork}><Icon name="wrench" />{t('workOrders.workButton')}</button>
+	</div>
 
 	<div class="actions status-actions">
 		<button class="btn primary" type="button" disabled={statusBusy} onclick={() => setStatus('done')}
@@ -456,6 +462,52 @@
 		<button class="btn" type="button" disabled={statusBusy} onclick={() => setStatus('open')}>{t('workOrders.reopen')}</button>
 	</div>
 {/if}
+
+<Sheet bind:open={workOpen} title={t('workOrders.addWork')}>
+	<form onsubmit={addItem}>
+		{#if wError}<div class="notice error" role="alert">{wError}</div>{/if}
+		<label class="field">
+			{t('workOrders.workDescription')}
+			<input
+				type="text"
+				bind:value={desc}
+				maxlength="500"
+				required
+				autocomplete="off"
+				enterkeyhint="done"
+				placeholder={t('workOrders.addWorkPlaceholder')}
+			/>
+		</label>
+		{#if shownSuggestions.length > 0}
+			<div class="suggestions" aria-label={t('workOrders.suggestions')}>
+				{#each shownSuggestions as s (s.description)}
+					<button class="suggestion" type="button" onclick={() => useSuggestion(s)}>
+						<span>{s.description}</span>
+						{#if s.quantity_milli !== 1000 || (isOwner && s.unit_price_minor != null)}
+							<span class="hint"
+								>× {formatQuantity(s.quantity_milli)}{#if isOwner && s.unit_price_minor != null}{' · ' +
+										formatMoney(s.unit_price_minor, currency)}{/if}</span
+							>
+						{/if}
+					</button>
+				{/each}
+			</div>
+		{/if}
+		<div class="two-cols">
+			<label class="field">
+				{t('workOrders.quantity')}
+				<input type="text" inputmode="decimal" bind:value={qty} maxlength="12" autocomplete="off" />
+			</label>
+			{#if isOwner}
+				<label class="field">
+					{t('workOrders.unitPrice', { currency })}
+					<input type="text" inputmode="decimal" bind:value={price} maxlength="16" autocomplete="off" />
+				</label>
+			{/if}
+		</div>
+		<button class="btn primary block" type="submit" disabled={addBusy || !desc.trim()}>{t('workOrders.addItem')}</button>
+	</form>
+</Sheet>
 
 <Sheet bind:open={partOpen} title={t('workOrders.addPart')}>
 	{#if picked}
@@ -634,11 +686,31 @@
 		text-align: right;
 		padding: 0 var(--gutter);
 	}
-	.add {
+	.add-buttons {
 		margin-top: 16px;
 	}
-	.add-part {
-		margin-top: 16px;
+	.suggestions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin: -4px 0 14px;
+	}
+	.suggestion {
+		display: grid;
+		gap: 2px;
+		min-height: 48px;
+		max-width: 100%;
+		padding: 6px 12px;
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		background: var(--surface);
+		color: var(--ink);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.suggestion .hint {
+		font-size: 0.85rem;
 	}
 	.picked {
 		display: grid;
@@ -648,8 +720,9 @@
 	.danger {
 		color: var(--danger);
 	}
+	/* Finishing the order is a separate step from adding to it. */
 	.status-actions {
-		margin-bottom: 16px;
+		margin: 24px 0 16px;
 	}
 	.gap {
 		margin-top: 10px;

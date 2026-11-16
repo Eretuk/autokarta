@@ -556,7 +556,7 @@
 					</span>
 				</svelte:element>
 				{#if draft && !i.part_id}
-					<div class="match">
+					<div class="actions match">
 						<button class="btn" type="button" onclick={() => matchLine(i)}>{t('deliveries.choosePart')}</button>
 						<a class="btn" href={createPartHref(i)}>{t('deliveries.createPart')}</a>
 					</div>
@@ -792,12 +792,8 @@
 		color: var(--danger);
 	}
 	.match {
-		display: flex;
-		gap: 8px;
+		margin-top: 0;
 		padding: 0 var(--gutter) 12px;
-	}
-	.match > .btn {
-		flex: 1 1 0;
 	}
 	.add-lines {
 		margin: 0 0 16px;

@@ -186,6 +186,7 @@ API (all JSON, prefix `/api`):
 | POST | `/vehicles/{id}/odometer` | staff | `{reading, read_on?, confirm_lower?}` |
 | DELETE | `/vehicles/{id}/odometer/{reading_id}` | owner | manual readings only |
 | GET | `/work-orders?status=` | staff | |
+| GET | `/work-orders/labour?q=` | staff | labour written in earlier orders, one per description, most used first (6, or 8 matching `q`); last price for owners |
 | POST | `/work-orders` | staff | `{vehicle_id, odometer?, complaint?, confirm_lower?}` |
 | GET/PATCH | `/work-orders/{id}` | staff | `{complaint?, notes?, status?, odometer?, confirm_lower?}` |
 | POST | `/work-orders/{id}/items` | staff | `{description?, part_id?, quantity_milli?, unit_price_minor?}`; a part line defaults to the part's name and price |

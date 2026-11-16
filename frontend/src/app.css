@@ -391,6 +391,10 @@ select:focus {
 	gap: 8px;
 	margin-top: 8px;
 }
+/* Buttons in a row share it equally, whatever their labels; when they do
+   not fit side by side they wrap two (or one) to a row. */
 .actions > .btn {
-	flex: 1 1 auto;
+	flex: 1 1 0;
+	min-width: min(100%, 9.5rem);
+	text-align: center;
 }
