@@ -35,12 +35,21 @@
 
 	let error = $state('');
 
-	// ----- quick add -----
+	// ----- add work -----
+	let workOpen = $state(false);
+	let wError = $state('');
 	let desc = $state('');
 	let qty = $state('1');
 	let price = $state('');
 	let addBusy = $state(false);
-	let descInput = $state<HTMLInputElement>();
+
+	function openWork() {
+		desc = '';
+		qty = '1';
+		price = '';
+		wError = '';
+		workOpen = true;
+	}
 
 	// Jobs written before, offered again: the most used while the field is
 	// empty, the matching ones while typing.
@@ -56,7 +65,7 @@
 		}
 	}, 200);
 	$effect(() => {
-		if (isOpen) loadSuggestions(desc.trim());
+		if (workOpen) loadSuggestions(desc.trim());
 	});
 	const shownSuggestions = $derived(
 		suggestions.filter((s) => s.description.trim().toLowerCase() !== desc.trim().toLowerCase())
@@ -72,33 +81,29 @@
 		e.preventDefault();
 		const quantity = parseQuantity(qty);
 		if (quantity === null) {
-			error = t('errors.invalid_quantity');
+			wError = t('errors.invalid_quantity');
 			return;
 		}
 		let unitPrice: number | undefined;
 		if (isOwner && price.trim()) {
 			const p = parseMoney(price, currency);
 			if (p === null) {
-				error = t('errors.invalid_price');
+				wError = t('errors.invalid_price');
 				return;
 			}
 			unitPrice = p;
 		}
 		addBusy = true;
-		error = '';
+		wError = '';
 		try {
 			wo = await api<WorkOrderDetail>('POST', `${base}/items`, {
 				description: desc,
 				quantity_milli: quantity,
 				unit_price_minor: unitPrice
 			});
-			desc = '';
-			qty = '1';
-			price = '';
-			await tick();
-			descInput?.focus();
+			workOpen = false;
 		} catch (err) {
-			error = errorMessage(err);
+			wError = errorMessage(err);
 		} finally {
 			addBusy = false;
 		}
@@ -438,13 +443,32 @@
 {/if}
 
 {#if isOpen}
-	<button class="btn block add-part" type="button" onclick={openPart}><Icon name="box" />{t('workOrders.addPart')}</button>
+	<div class="add-buttons">
+		<button class="btn" type="button" onclick={openPart}><Icon name="box" />{t('workOrders.partButton')}</button>
+		<button class="btn" type="button" onclick={openWork}><Icon name="wrench" />{t('workOrders.workButton')}</button>
+	</div>
 
-	<form class="add card" onsubmit={addItem}>
+	<div class="actions status-actions">
+		<button class="btn primary" type="button" disabled={statusBusy} onclick={() => setStatus('done')}
+			>{t('workOrders.markDone')}</button
+		>
+		<button class="btn danger" type="button" disabled={statusBusy} onclick={() => setStatus('cancelled')}
+			>{t('workOrders.cancel')}</button
+		>
+	</div>
+{:else}
+	<p class="hint">{t('workOrders.closedHint')}</p>
+	<div class="actions">
+		<button class="btn" type="button" disabled={statusBusy} onclick={() => setStatus('open')}>{t('workOrders.reopen')}</button>
+	</div>
+{/if}
+
+<Sheet bind:open={workOpen} title={t('workOrders.addWork')}>
+	<form onsubmit={addItem}>
+		{#if wError}<div class="notice error" role="alert">{wError}</div>{/if}
 		<label class="field">
-			{t('workOrders.addWork')}
+			{t('workOrders.workDescription')}
 			<input
-				bind:this={descInput}
 				type="text"
 				bind:value={desc}
 				maxlength="500"
@@ -483,21 +507,7 @@
 		</div>
 		<button class="btn primary block" type="submit" disabled={addBusy || !desc.trim()}>{t('workOrders.addItem')}</button>
 	</form>
-
-	<div class="actions status-actions">
-		<button class="btn primary" type="button" disabled={statusBusy} onclick={() => setStatus('done')}
-			>{t('workOrders.markDone')}</button
-		>
-		<button class="btn danger" type="button" disabled={statusBusy} onclick={() => setStatus('cancelled')}
-			>{t('workOrders.cancel')}</button
-		>
-	</div>
-{:else}
-	<p class="hint">{t('workOrders.closedHint')}</p>
-	<div class="actions">
-		<button class="btn" type="button" disabled={statusBusy} onclick={() => setStatus('open')}>{t('workOrders.reopen')}</button>
-	</div>
-{/if}
+</Sheet>
 
 <Sheet bind:open={partOpen} title={t('workOrders.addPart')}>
 	{#if picked}
@@ -676,10 +686,10 @@
 		text-align: right;
 		padding: 0 var(--gutter);
 	}
-	.add {
-		margin-top: 16px;
-	}
-	.add-part {
+	.add-buttons {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 8px;
 		margin-top: 16px;
 	}
 	.suggestions {
