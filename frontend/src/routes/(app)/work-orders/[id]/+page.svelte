@@ -443,7 +443,7 @@
 {/if}
 
 {#if isOpen}
-	<div class="add-buttons">
+	<div class="actions add-buttons">
 		<button class="btn" type="button" onclick={openPart}><Icon name="box" />{t('workOrders.partButton')}</button>
 		<button class="btn" type="button" onclick={openWork}><Icon name="wrench" />{t('workOrders.workButton')}</button>
 	</div>
@@ -687,9 +687,6 @@
 		padding: 0 var(--gutter);
 	}
 	.add-buttons {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 8px;
 		margin-top: 16px;
 	}
 	.suggestions {
@@ -723,8 +720,9 @@
 	.danger {
 		color: var(--danger);
 	}
+	/* Finishing the order is a separate step from adding to it. */
 	.status-actions {
-		margin-bottom: 16px;
+		margin: 24px 0 16px;
 	}
 	.gap {
 		margin-top: 10px;

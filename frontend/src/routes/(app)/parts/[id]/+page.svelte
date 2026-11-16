@@ -439,9 +439,10 @@
 	.danger {
 		color: var(--danger);
 	}
+	/* Values here are short numbers: they stay whole, long labels wrap. */
 	.facts {
 		display: grid;
-		grid-template-columns: max-content 1fr;
+		grid-template-columns: minmax(0, auto) max-content;
 		gap: 6px 14px;
 		margin: 0 0 12px;
 	}
