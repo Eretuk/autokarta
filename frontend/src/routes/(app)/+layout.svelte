@@ -184,8 +184,9 @@
 		display: none;
 	}
 
-	/* Wide screens: the same links sit in the header. */
-	@media (min-width: 900px) {
+	/* Wide screens: the same links sit in the header. Six Polish or Russian
+	   labels need about 1100px; below 1360px they go without icons. */
+	@media (min-width: 1100px) {
 		.nav {
 			position: static;
 			background: none;
@@ -215,6 +216,17 @@
 		}
 		main {
 			padding-bottom: 48px;
+		}
+	}
+	@media (min-width: 1100px) and (max-width: 1359px) {
+		/* The update dot stays, after the label. */
+		.nav .icon {
+			order: 1;
+			align-self: flex-start;
+			margin-top: 10px;
+		}
+		.nav .icon > :global(svg) {
+			display: none;
 		}
 	}
 </style>
